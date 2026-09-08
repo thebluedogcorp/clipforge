@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Download,
   Loader2,
@@ -18,6 +18,8 @@ import {
   Music,
   UploadCloud,
   Trash2,
+  Play,
+  Pause,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -239,6 +241,24 @@ export function ExportPanel() {
 
       const args: string[] = ["-i", inputName, "-ss", String(clip.start), "-to", String(clip.end)];
 
+      // optional background music for single-clip export
+      let musicName: string | null = null;
+      const musicUrl = useClipper.getState().musicTrack;
+      const musicVol = useClipper.getState().musicVolume;
+      const musicMuted = useClipper.getState().musicMuted;
+      const useMusic =
+        musicUrl && !musicMuted && musicVol > 0 && (format === "mp4" || format === "webm");
+      if (useMusic) {
+        try {
+          const musicBlob = await (await fetch(musicUrl)).blob();
+          musicName = `music_solo.${musicUrl.includes(".mp3") ? "mp3" : "wav"}`;
+          await ffmpeg.writeFile(musicName, new Uint8Array(await musicBlob.arrayBuffer()));
+          args.push("-i", musicName);
+        } catch {
+          musicName = null;
+        }
+      }
+
       // build the video filter chain: crop to aspect + optional caption burn-in
       const vfParts: string[] = [];
       if (aspect !== "16:9") {
@@ -264,9 +284,24 @@ export function ExportPanel() {
         }
       }
 
+      // build the audio filter chain for music mix (if music is loaded)
+      // We use -filter_complex because amix needs to reference both inputs.
+      let filterComplex: string | null = null;
+      if (useMusic && musicName) {
+        const clipDur = (clip.end - clip.start).toFixed(3);
+        // [0:a] is clip audio, [1:a] is the music input
+        filterComplex = `[1:a]aloop=loop=-1:size=2e9,atrim=duration=${clipDur},volume=${musicVol}[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=0[aout]`;
+      }
+
       if (format === "mp4") {
+        if (filterComplex) {
+          args.push("-filter_complex", filterComplex, "-map", "0:v", "-map", "[aout]");
+        }
         args.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k");
       } else if (format === "webm") {
+        if (filterComplex) {
+          args.push("-filter_complex", filterComplex, "-map", "0:v", "-map", "[aout]");
+        }
         args.push("-c:v", "libvpx", "-b:v", "1M", "-c:a", "libvorbis");
       } else if (format === "gif") {
         // gif: merge aspect crop with the standard gif filter
@@ -297,6 +332,7 @@ export function ExportPanel() {
         await ffmpeg.deleteFile(inputName);
         await ffmpeg.deleteFile(outName);
         if (srtName) await ffmpeg.deleteFile(srtName);
+        if (musicName) await ffmpeg.deleteFile(musicName);
       } catch {}
       toast.success(`${clip.name} exported`);
     } catch (e) {
@@ -706,9 +742,19 @@ export function ExportPanel() {
                       ["dissolve", "Dissolve"],
                       ["wipeleft", "Wipe L"],
                       ["wiperight", "Wipe R"],
-                      ["slideup", "Slide"],
-                      ["circleopen", "Circle"],
+                      ["slideup", "Slide Up"],
+                      ["slidedown", "Slide Dn"],
+                      ["circleopen", "Circle Open"],
+                      ["circleclose", "Circle Close"],
                       ["radial", "Radial"],
+                      ["smoothleft", "Smooth L"],
+                      ["smoothright", "Smooth R"],
+                      ["smoothup", "Smooth Up"],
+                      ["smoothdown", "Smooth Dn"],
+                      ["hlwind", "Wind L"],
+                      ["hrwind", "Wind R"],
+                      ["vslide", "V-Slide"],
+                      ["hslide", "H-Slide"],
                     ] as const).map(([val, label]) => (
                       <button
                         key={val}
@@ -782,6 +828,7 @@ export function ExportPanel() {
                 step={5}
                 onValueChange={([v]) => setMusicVolume(v / 100)}
               />
+              <MusicPreview src={musicTrack} volume={musicVolume} />
               <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 p-1.5 text-[10px] text-muted-foreground hover:border-primary/40 hover:text-foreground">
                 Replace track
                 <input
@@ -866,4 +913,71 @@ function triggerDownload(url: string, name: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+/** In-app audio preview for the loaded music track, with volume applied. */
+function MusicPreview({ src, volume }: { src: string | null; volume: number }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  // pause when the track is removed/replaced — state cleanup happens via onPause
+  useEffect(() => {
+    if (!src) audioRef.current?.pause();
+  }, [src]);
+
+  function toggle() {
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing) {
+      a.pause();
+      setPlaying(false);
+    } else {
+      a.volume = volume;
+      a.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-background/40 p-1.5">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 rounded-full bg-primary/15 text-primary hover:bg-primary/25"
+        onClick={toggle}
+        aria-label={playing ? "Pause preview" : "Play preview"}
+      >
+        {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 translate-x-0.5" />}
+      </Button>
+      {/* animated bars when playing */}
+      <div className="flex h-5 flex-1 items-center gap-0.5">
+        {Array.from({ length: 16 }).map((_, i) => (
+          <div
+            key={i}
+            className={`w-0.5 shrink-0 rounded-full transition-all ${
+              playing ? "bg-primary" : "bg-muted-foreground/30"
+            }`}
+            style={{
+              height: playing ? `${30 + Math.abs(Math.sin(i * 0.8)) * 70}%` : "20%",
+              animation: playing ? `pulse-dot ${0.5 + (i % 4) * 0.15}s ease-in-out infinite` : undefined,
+            }}
+          />
+        ))}
+      </div>
+      <audio
+        ref={audioRef}
+        src={src || undefined}
+        loop
+        preload="auto"
+        onEnded={() => setPlaying(false)}
+        onPause={() => setPlaying(false)}
+      />
+    </div>
+  );
 }

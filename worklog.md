@@ -702,3 +702,74 @@ priority recommendations: transition variety and background music.
 4. **Actual `.exe` build script** — `bun build --compile` launcher.
 5. **More transition types** — ffmpeg supports ~30 xfade transitions; add
    more (smoothleft, circleclose, hlwind, etc.).
+
+---
+
+## Phase 8 Update — Cron Review #7 (Music in Single-Clip Export + Preview + More Transitions)
+
+### Current Project Status Assessment
+
+The app from Phase 7 is stable — `GET /` → 200, no console errors. QA via
+agent-browser confirmed all Phase 1–7 features still work. No critical bugs
+found. This round implemented the top priority recommendations from Phase 7:
+music in single-clip export, music preview, and more transition types.
+
+### This Round's Completed Modifications
+
+**1. Music in single-clip export** (`export-panel.tsx`)
+- The `exportClip()` function now optionally loads a music track (when
+  `musicTrack` is set, not muted, volume > 0, and format is mp4/webm).
+- Writes the music blob to the ffmpeg FS as a second input, then builds a
+  `-filter_complex` chain: `aloop` + `atrim` (to clip duration) + `volume`
+  + `amix` to mix the music under the clip's audio.
+- Maps `0:v` (video) and `[aout]` (mixed audio) to the output.
+- Cleanup deletes the music file after export.
+- Verified: single-clip export with music → "Clip 1 MP4 · 3.7 MB", ffmpeg
+  log shows "Input #1, wav, from 'music_solo.wav'" and "amix:default ->
+  Stream"; ffprobe confirms the output has both video and audio streams.
+
+**2. Music preview play button** (`export-panel.tsx`)
+- Added a `MusicPreview` component with a play/pause button and an animated
+  16-bar equalizer that pulses when playing.
+- Uses an `<audio>` element with `loop`, volume synced to the music volume
+  state. The `onPause`/`onEnded` handlers reset the playing state.
+- Wired into the music card (shown when a track is loaded).
+- Verified: clicking play starts audio playback (1 audio playing confirmed);
+  VLM confirmed "green play button for previewing the loaded background
+  music track… horizontal row of small dots that serve as a visual
+  representation of the audio."
+
+**3. More transition types** (`store.ts` + `export-panel.tsx`)
+- Expanded `transitionType` from 7 to 17 options: fade, dissolve, wipeleft,
+  wiperight, slideup, slidedown, circleopen, circleclose, radial, smoothleft,
+  smoothright, smoothup, smoothdown, hlwind, hrwind, vslide, hslide.
+- UI: a 17-chip row in the stitch card (when crossfade > 0).
+- All use ffmpeg's `xfade` filter `transition=` parameter.
+
+### Verification Results (this round)
+
+- Lint clean (`bun run lint` → no errors/warnings).
+- `GET /` → 200, no console errors after reload.
+- **Single-clip music export**: ffmpeg log confirms "Input #1, wav, from
+  'music_solo.wav'" + "amix:default -> Stream"; ffprobe confirms output has
+  video + audio streams; 3.7 MB MP4.
+- **Music preview**: clicking play → 1 audio playing; VLM confirmed play
+  button + equalizer bars.
+- **More transitions**: 17 chips render in the stitch card.
+
+### Unresolved Issues / Risks
+
+- **Music preview state** — the play button's icon sometimes doesn't toggle
+  to Pause despite audio playing (autoplay policy / promise resolution edge
+  case). The audio DOES play; only the visual icon is occasionally stale.
+- All Phase 1–7 known limitations still apply.
+
+### Priority Recommendations for Next Phase
+
+1. **Fix music preview icon toggle** — ensure `setPlaying(true)` fires
+   reliably on play() promise resolution.
+2. **Mobile timeline bottom-sheet** — collapse the timeline into a swipeable
+   bottom sheet.
+3. **Actual `.exe` build script** — `bun build --compile` launcher.
+4. **Music ducking** — auto-lower music volume when clip audio is present.
+5. **Transition preview** — a tiny live preview of each transition type.

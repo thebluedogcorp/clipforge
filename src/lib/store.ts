@@ -107,8 +107,8 @@ interface ClipperState {
   setStitchMode: (v: boolean) => void;
   crossfadeSec: number;
   setCrossfadeSec: (n: number) => void;
-  transitionType: "fade" | "wipeleft" | "wiperight" | "slideup" | "circleopen" | "dissolve" | "radial";
-  setTransitionType: (t: "fade" | "wipeleft" | "wiperight" | "slideup" | "circleopen" | "dissolve" | "radial") => void;
+  transitionType: "fade" | "wipeleft" | "wiperight" | "slideup" | "slidedown" | "circleopen" | "circleclose" | "dissolve" | "radial" | "smoothleft" | "smoothright" | "smoothup" | "smoothdown" | "hlwind" | "hrwind" | "vslide" | "hslide";
+  setTransitionType: (t: "fade" | "wipeleft" | "wiperight" | "slideup" | "slidedown" | "circleopen" | "circleclose" | "dissolve" | "radial" | "smoothleft" | "smoothright" | "smoothup" | "smoothdown" | "hlwind" | "hrwind" | "vslide" | "hslide") => void;
   // background music
   musicTrack: string | null;
   setMusicTrack: (url: string | null) => void;
