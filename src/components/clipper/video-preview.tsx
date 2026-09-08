@@ -84,6 +84,7 @@ export function VideoPreview() {
   const loopEnabled = useClipper((s) => s.loopEnabled);
   const toggleLoop = useClipper((s) => s.toggleLoop);
   const filters = useClipper((s) => s.filters);
+  const watermark = useClipper((s) => s.watermark);
 
   // build a CSS filter string for the preview
   const filterCss = [
@@ -283,6 +284,10 @@ export function VideoPreview() {
                   <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-0.5 font-mono text-[10px] font-semibold text-primary backdrop-blur">
                     {aspect} crop
                   </div>
+                )}
+                {/* watermark overlay (native mode only) */}
+                {device === "native" && watermark.src && (
+                  <WatermarkOverlay watermark={watermark} />
                 )}
               </div>
             </div>
@@ -604,5 +609,37 @@ function CaptionOverlay({
     >
       {text}
     </div>
+  );
+}
+
+function WatermarkOverlay({
+  watermark,
+}: {
+  watermark: {
+    src: string | null;
+    position: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
+    size: number;
+    opacity: number;
+  };
+}) {
+  if (!watermark.src) return null;
+  const posClass: Record<string, string> = {
+    "top-left": "top-3 left-3",
+    "top-right": "top-3 right-3",
+    "bottom-left": "bottom-3 left-3",
+    "bottom-right": "bottom-3 right-3",
+    center: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
+  };
+  return (
+    <img
+      src={watermark.src}
+      alt="watermark"
+      className={`pointer-events-none absolute z-20 ${posClass[watermark.position]}`}
+      style={{
+        width: `${watermark.size}%`,
+        opacity: watermark.opacity,
+        filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))",
+      }}
+    />
   );
 }

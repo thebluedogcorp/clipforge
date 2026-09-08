@@ -855,3 +855,84 @@ filters system.
 4. **Actual `.exe` build script** — `bun build --compile` launcher.
 5. **Filter export accuracy** — verify the CSS-to-ffmpeg filter mapping
    produces visually identical results.
+
+---
+
+## Phase 10 Update — Cron Review #9 (Watermark/Logo Overlay)
+
+### Current Project Status Assessment
+
+The app from Phase 9 is stable — `GET /` → 200, no console errors. QA via
+agent-browser + VLM confirmed all Phase 1–9 features still work. No critical
+bugs found. This round implemented the watermark/logo overlay feature.
+
+### This Round's Completed Modifications
+
+**1. Watermark/logo overlay** (`store.ts` + `video-preview.tsx` + `export-panel.tsx`)
+- Added `watermark` state to the store: `src` (object URL), `position`
+  (top-left/top-right/bottom-left/bottom-right/center), `size` (5–50% of
+  video width), `opacity` (0.1–1.0). Plus `setWatermark()` for partial updates.
+- **Preview**: a `WatermarkOverlay` component renders the image absolutely
+  positioned over the video (native mode only), with CSS `width: size%`,
+  `opacity`, and a drop-shadow. Position maps to Tailwind classes
+  (top-3/bottom-3/left-3/right-3/center).
+- **Export**: the single-clip export now:
+  - Loads the watermark image into the ffmpeg FS as an extra input.
+  - Builds a `-filter_complex` chain that scales the watermark to
+    `videoWidth * size%` (using the probed video width, NOT `iw` which
+    refers to the watermark's own width — this was the key bug fix),
+    applies `format=rgba,colorchannelmixer=aa=opacity` for transparency,
+    then `overlay` with position expressions like
+    `main_w-overlay_w-10:main_h-overlay_h-10` for bottom-right.
+  - Correctly computes input indices when both music and watermark are
+    present (music = input 1, watermark = input 2).
+  - Maps `[vout]` (watermarked video) and `[aout]` (mixed audio) to output.
+- **UI**: a "Watermark / logo" card in the export panel with:
+  - A dashed drop zone for image files (PNG/JPG) when no logo is loaded.
+  - When loaded: image icon (turns primary), a 5-button position picker
+    (↖ ↗ ● ↙ ↘), size slider (5–50%), opacity slider (10–100%), "Remove"
+    button.
+- Verified end-to-end: VLM confirmed "small, semi-transparent green
+  rectangular box containing the white text 'CLIPFORGE'" burned into the
+  bottom-right corner of the exported MP4.
+
+### Key Bug Fixed During Development
+
+- **Watermark scale bug**: initially used `scale=iw*0.15:-1` in the ffmpeg
+  filter, but `iw` in the scale filter refers to the INPUT's own width
+  (the 200px logo), producing a tiny 30px watermark. Fixed by using the
+  probed `videoWidth` (1280px) → `scale=192:-1` for a properly sized
+  watermark at 15% of the video width.
+
+### Verification Results (this round)
+
+- Lint clean (`bun run lint` → no errors/warnings).
+- `GET /` → 200, no console errors after reload.
+- **Watermark preview**: VLM confirmed "green rectangular watermark with
+  the text 'CLIPFORGE' overlaid on the video preview in the bottom-right
+  corner."
+- **Watermark export**: VLM confirmed "small, semi-transparent green
+  rectangular box containing the white text 'CLIPFORGE'" burned into the
+  exported MP4 at the bottom-right corner.
+- ffmpeg log confirms: "Input #1, png_pipe, from 'wm.png'" +
+  "overlay:default -> Stream #0:0 (libx264)".
+
+### Unresolved Issues / Risks
+
+- **Watermark in stitch mode** — the watermark is only applied in single-
+  clip export, not in the stitch/compilation export. Could be added per-
+  segment during extraction.
+- **Watermark animation** — no support for animated watermarks (GIF/APNG)
+  or fade in/out.
+- All Phase 1–9 known limitations still apply.
+
+### Priority Recommendations for Next Phase
+
+1. **Watermark in stitch export** — apply the watermark per-segment during
+   the stitch extraction phase.
+2. **Music ducking** — auto-lower music volume when clip audio is present
+   (sidechain compression).
+3. **Mobile timeline bottom-sheet** — collapse the timeline into a swipeable
+   bottom sheet.
+4. **Actual `.exe` build script** — `bun build --compile` launcher.
+5. **Watermark fade in/out** — animate the watermark opacity over time.

@@ -89,6 +89,15 @@ interface ClipperState {
   setFilters: (f: Partial<{ brightness: number; contrast: number; saturation: number; grayscale: number; blur: number }>) => void;
   resetFilters: () => void;
 
+  // watermark/logo overlay
+  watermark: {
+    src: string | null; // object URL of the image
+    position: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
+    size: number; // 5..50, % of video width
+    opacity: number; // 0..1
+  };
+  setWatermark: (w: Partial<{ src: string | null; position: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center"; size: number; opacity: number }>) => void;
+
   // audio waveform (real, decoded via WebAudio)
   waveform: { peaks: number[]; duration: number } | null;
   setWaveform: (w: { peaks: number[]; duration: number } | null) => void;
@@ -330,6 +339,9 @@ export const useClipper = create<ClipperState>((set, get) => ({
   filters: { brightness: 1, contrast: 1, saturation: 1, grayscale: 0, blur: 0 },
   setFilters: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),
   resetFilters: () => set({ filters: { brightness: 1, contrast: 1, saturation: 1, grayscale: 0, blur: 0 } }),
+
+  watermark: { src: null, position: "bottom-right", size: 15, opacity: 0.8 },
+  setWatermark: (w) => set((s) => ({ watermark: { ...s.watermark, ...w } })),
 
   waveform: null,
   setWaveform: (w) => set({ waveform: w }),

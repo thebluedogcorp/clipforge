@@ -78,6 +78,8 @@ export function ExportPanel() {
   const setMusicTrack = useClipper((s) => s.setMusicTrack);
   const musicVolume = useClipper((s) => s.musicVolume);
   const setMusicVolume = useClipper((s) => s.setMusicVolume);
+  const watermark = useClipper((s) => s.watermark);
+  const setWatermark = useClipper((s) => s.setWatermark);
   const [running, setRunning] = useState(false);
 
   const enabledClips = clips.filter((c) => c.enabled);
@@ -259,6 +261,22 @@ export function ExportPanel() {
         }
       }
 
+      // optional watermark image
+      let watermarkName: string | null = null;
+      const wm = useClipper.getState().watermark;
+      const useWatermark = wm.src && (format === "mp4" || format === "webm" || format === "gif");
+      if (useWatermark) {
+        try {
+          const wmBlob = await (await fetch(wm.src!)).blob();
+          const ext = wmBlob.type.includes("png") ? "png" : "jpg";
+          watermarkName = `wm.${ext}`;
+          await ffmpeg.writeFile(watermarkName, new Uint8Array(await wmBlob.arrayBuffer()));
+          args.push("-i", watermarkName);
+        } catch {
+          watermarkName = null;
+        }
+      }
+
       // build the video filter chain: crop to aspect + video filters + caption burn-in
       const vfParts: string[] = [];
       // video color filters (brightness/contrast/saturation/grayscale/blur)
@@ -295,21 +313,58 @@ export function ExportPanel() {
 
       // build the audio filter chain for music mix (if music is loaded)
       // We use -filter_complex because amix needs to reference both inputs.
+      // Input indices: 0 = video, [1] = music (if loaded), [wmIdx] = watermark
+      let musicInputIdx = useMusic && musicName ? 1 : -1;
+      let wmInputIdx = watermarkName ? (musicInputIdx >= 0 ? 2 : 1) : -1;
+
       let filterComplex: string | null = null;
-      if (useMusic && musicName) {
-        const clipDur = (clip.end - clip.start).toFixed(3);
-        // [0:a] is clip audio, [1:a] is the music input
-        filterComplex = `[1:a]aloop=loop=-1:size=2e9,atrim=duration=${clipDur},volume=${musicVol}[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=0[aout]`;
+      const fcParts: string[] = [];
+
+      // video chain: vfParts applied to [0:v], then overlay watermark if present
+      if (useWatermark && watermarkName && wmInputIdx >= 0) {
+        // scale the watermark to wm.size% of the MAIN video width.
+        // We can't use iw in scale (refers to the watermark's own width),
+        // so we use the probed videoWidth from earlier.
+        const wmWidth = Math.round(videoWidth * (wm.size / 100));
+        const wmScale = `scale=${wmWidth}:-1`;
+        // set opacity via format=rgba + colorchannelmixer
+        const wmOpacity = `format=rgba,colorchannelmixer=aa=${wm.opacity}`;
+        // position mapping: overlay=x:y
+        const posMap: Record<string, string> = {
+          "top-left": "10:10",
+          "top-right": "main_w-overlay_w-10:10",
+          "bottom-left": "10:main_h-overlay_h-10",
+          "bottom-right": "main_w-overlay_w-10:main_h-overlay_h-10",
+          center: "(main_w-overlay_w)/2:(main_h-overlay_h)/2",
+        };
+        // apply vfParts to [0:v] first, then we'll overlay on top
+        const vChain = vfParts.length > 0 ? `[0:v]${vfParts.join(",")}[vbase]` : "[0:v]copy[vbase]";
+        fcParts.push(vChain);
+        fcParts.push(`[${wmInputIdx}:v]${wmScale},${wmOpacity}[wm]`);
+        fcParts.push(`[vbase][wm]overlay=${posMap[wm.position]}:format=auto[vout]`);
       }
+
+      // audio chain: music mix
+      if (useMusic && musicName && musicInputIdx >= 0) {
+        const clipDur = (clip.end - clip.start).toFixed(3);
+        fcParts.push(`[${musicInputIdx}:a]aloop=loop=-1:size=2e9,atrim=duration=${clipDur},volume=${musicVol}[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=0[aout]`);
+      }
+
+      if (fcParts.length > 0) {
+        filterComplex = fcParts.join(";");
+      }
+
+      const videoMap = useWatermark && watermarkName ? "[vout]" : "0:v";
+      const audioMap = useMusic && musicName ? "[aout]" : "0:a?";
 
       if (format === "mp4") {
         if (filterComplex) {
-          args.push("-filter_complex", filterComplex, "-map", "0:v", "-map", "[aout]");
+          args.push("-filter_complex", filterComplex, "-map", videoMap, "-map", audioMap);
         }
         args.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k");
       } else if (format === "webm") {
         if (filterComplex) {
-          args.push("-filter_complex", filterComplex, "-map", "0:v", "-map", "[aout]");
+          args.push("-filter_complex", filterComplex, "-map", videoMap, "-map", audioMap);
         }
         args.push("-c:v", "libvpx", "-b:v", "1M", "-c:a", "libvorbis");
       } else if (format === "gif") {
@@ -317,7 +372,12 @@ export function ExportPanel() {
         const gifVf = vfParts.length > 0
           ? `${vfParts.join(",")},fps=12,scale=480:-1:flags=lanczos`
           : "fps=12,scale=480:-1:flags=lanczos";
-        args.push("-vf", gifVf, "-loop", "0");
+        if (filterComplex) {
+          // gif + watermark — use filter_complex
+          args.push("-filter_complex", filterComplex, "-map", videoMap);
+        } else {
+          args.push("-vf", gifVf, "-loop", "0");
+        }
       } else if (format === "mp3") {
         args.push("-vn", "-c:a", "libmp3lame", "-b:a", "128k");
       }
@@ -342,6 +402,7 @@ export function ExportPanel() {
         await ffmpeg.deleteFile(outName);
         if (srtName) await ffmpeg.deleteFile(srtName);
         if (musicName) await ffmpeg.deleteFile(musicName);
+        if (watermarkName) await ffmpeg.deleteFile(watermarkName);
       } catch {}
       toast.success(`${clip.name} exported`);
     } catch (e) {
@@ -859,6 +920,97 @@ export function ExportPanel() {
                   }}
                 />
               </label>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Watermark / logo overlay */}
+      {format !== "mp3" && format !== "srt" && source?.kind === "file" && (
+        <div className="space-y-2 rounded-lg border border-border/50 bg-card/40 p-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ImageIcon className={`h-4 w-4 ${watermark.src ? "text-primary" : "text-muted-foreground"}`} />
+              <div>
+                <Label className="text-xs font-medium">Watermark / logo</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  {watermark.src ? "Logo loaded" : "Overlay an image on the video"}
+                </p>
+              </div>
+            </div>
+            {watermark.src && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => setWatermark({ src: null })}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove
+              </Button>
+            )}
+          </div>
+          {!watermark.src ? (
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 p-2.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground">
+              <UploadCloud className="h-4 w-4" />
+              Drop image (PNG / JPG)
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setWatermark({ src: URL.createObjectURL(f) });
+                }}
+              />
+            </label>
+          ) : (
+            <div className="space-y-2 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <Label className="w-16 shrink-0 text-[11px] text-muted-foreground">Position</Label>
+                <div className="grid flex-1 grid-cols-3 gap-1">
+                  {([
+                    ["top-left", "↖"], ["top-right", "↗"],
+                    ["center", "●"],
+                    ["bottom-left", "↙"], ["bottom-right", "↘"],
+                  ] as const).map(([val, icon]) => (
+                    <button
+                      key={val}
+                      onClick={() => setWatermark({ position: val })}
+                      className={`grid h-7 place-items-center rounded-md text-sm transition-colors ${
+                        watermark.position === val
+                          ? "bg-primary/20 text-primary"
+                          : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                      title={val}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] text-muted-foreground">Size</Label>
+                <span className="font-mono text-[11px] text-foreground/80">{watermark.size}%</span>
+              </div>
+              <Slider
+                value={[watermark.size]}
+                min={5}
+                max={50}
+                step={1}
+                onValueChange={([v]) => setWatermark({ size: v })}
+              />
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] text-muted-foreground">Opacity</Label>
+                <span className="font-mono text-[11px] text-foreground/80">{Math.round(watermark.opacity * 100)}%</span>
+              </div>
+              <Slider
+                value={[watermark.opacity * 100]}
+                min={10}
+                max={100}
+                step={5}
+                onValueChange={([v]) => setWatermark({ opacity: v / 100 })}
+              />
             </div>
           )}
         </div>
