@@ -25,6 +25,8 @@ import { useClipper } from "@/lib/store";
 import { videoController } from "@/lib/video-controller";
 import { formatTime, formatShort, clamp, uid } from "@/lib/format";
 import { CLIP_COLORS } from "@/lib/types";
+import { selectClips, candidatesToClips } from "@/lib/clip-selector";
+import { toast } from "sonner";
 
 type DragMode =
   | { kind: "none" }
@@ -268,19 +270,45 @@ export function Timeline() {
           />
           <span className="text-[11px] text-muted-foreground">s</span>
         </div>
-        <Select value={strategy} onValueChange={(v) => setStrategy(v as "even" | "sequential")}>
+        <Select value={strategy} onValueChange={(v) => setStrategy(v as "even" | "sequential" | "ai")}>
           <SelectTrigger className="h-8 w-[120px] text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="even">Even spread</SelectItem>
             <SelectItem value="sequential">Back-to-back</SelectItem>
+            <SelectItem value="ai">🧠 AI select</SelectItem>
           </SelectContent>
         </Select>
         <Button
           size="sm"
           className="h-8 gap-1.5 text-xs"
-          onClick={() => autoSplit(count, length, strategy)}
+          onClick={() => {
+            if (strategy === "ai") {
+              // Use local AI clip selection based on transcript
+              const transcript = useClipper.getState().transcript;
+              const captions = useClipper.getState().captions;
+              if (captions.length > 0) {
+                // Use caption segments as the transcript for selection
+                const segments = captions.map(c => ({ start: c.start, end: c.end, text: c.text }));
+                const candidates = selectClips(segments, count, length);
+                const clips = candidatesToClips(candidates);
+                useClipper.setState({
+                  clips: clips.map(c => ({ ...c, id: uid() })),
+                  selectedClipId: clips[0]?.id ?? null,
+                });
+              } else if (transcript) {
+                // No timed segments — fall back to auto-split with a note
+                toast.info("Transcribe + generate captions first for AI selection. Using even split.");
+                autoSplit(count, length, "even");
+              } else {
+                toast.info("Transcribe first for AI clip selection. Using even split.");
+                autoSplit(count, length, "even");
+              }
+            } else {
+              autoSplit(count, length, strategy);
+            }
+          }}
           disabled={!duration}
         >
           <Scissors className="h-3.5 w-3.5" />

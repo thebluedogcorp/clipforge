@@ -50,7 +50,7 @@ interface ClipperState {
   duplicateClip: (id: string) => void;
   mergeWithNext: (id: string) => void;
   splitClip: (id: string, atTime: number) => void;
-  autoSplit: (count: number, lengthSec: number, strategy: "even" | "sequential") => void;
+  autoSplit: (count: number, lengthSec: number, strategy: "even" | "sequential" | "ai") => void;
   clearClips: () => void;
   thumbnails: Record<string, string>; // clipId -> dataURL
   setThumbnail: (id: string, dataUrl: string) => void;

@@ -11,6 +11,7 @@ import { fetchFile } from "@ffmpeg/util";
 import { toast } from "sonner";
 import { suggestMood } from "@/lib/mood-detector";
 import { useMemo } from "react";
+import { useLocalTranscription } from "@/lib/use-local-transcription";
 
 export function TranscriptionPanel() {
   const source = useClipper((s) => s.source);
@@ -20,6 +21,8 @@ export function TranscriptionPanel() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [useLocal, setUseLocal] = useState(true);
+  const localTranscription = useLocalTranscription();
 
   const disabled = !source || source.kind !== "file" || loading;
 
@@ -38,7 +41,6 @@ export function TranscriptionPanel() {
       await ffmpeg.writeFile(inputName, await fetchFile(source.url));
       setBusy({ label: "Extracting audio…", progress: 0.4 });
 
-      // extract mono 16kHz WAV PCM — required by the ASR service (WAV/WebM)
       let progress = 0.4;
       ffmpeg.on("progress", ({ progress: p }) => {
         progress = 0.4 + Math.max(0, Math.min(1, p)) * 0.3;
@@ -57,13 +59,30 @@ export function TranscriptionPanel() {
       const data = await ffmpeg.readFile(outName);
       const blob = new Blob([data as Uint8Array], { type: "audio/wav" });
 
-      // cleanup
       try {
         await ffmpeg.deleteFile(inputName);
         await ffmpeg.deleteFile(outName);
       } catch {}
 
-      setBusy({ label: "Transcribing with AI…", progress: 0.7 });
+      // Try local Whisper first (runs in-browser, no cloud)
+      if (useLocal) {
+        setBusy({ label: "Transcribing with local Whisper (in-browser)…", progress: 0.5 });
+        try {
+          const result = await localTranscription.transcribe(blob);
+          if (result && result.text) {
+            setTranscript(result.text);
+            setBusy({ label: "Done", progress: 1 });
+            toast.success("Transcription ready (local Whisper — no data sent to cloud)");
+            return;
+          }
+        } catch (localErr) {
+          console.debug("[transcription] local Whisper failed, falling back to cloud", localErr);
+          toast.info("Local Whisper failed — falling back to cloud transcription");
+        }
+      }
+
+      // Fallback: cloud ASR via z-ai-web-dev-sdk
+      setBusy({ label: "Transcribing with cloud ASR…", progress: 0.7 });
 
       const form = new FormData();
       form.append("audio", blob, "audio.wav");
@@ -108,23 +127,48 @@ export function TranscriptionPanel() {
         )}
       </div>
 
+      {/* Local / Cloud toggle */}
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-card/40 p-2">
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[10px] font-medium ${useLocal ? "text-primary" : "text-muted-foreground"}`}>
+            🔒 Local Whisper
+          </span>
+          <span className="text-[10px] text-muted-foreground/50">|</span>
+          <span className={`text-[10px] font-medium ${!useLocal ? "text-primary" : "text-muted-foreground"}`}>
+            ☁️ Cloud ASR
+          </span>
+        </div>
+        <button
+          onClick={() => setUseLocal(!useLocal)}
+          className={`relative h-5 w-9 rounded-full transition-colors ${useLocal ? "bg-primary" : "bg-muted"}`}
+        >
+          <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${useLocal ? "translate-x-4" : "translate-x-0.5"}`} />
+        </button>
+      </div>
+
       <Button
         onClick={transcribe}
         disabled={disabled}
         className="w-full gap-2"
       >
-        {loading ? (
+        {loading || localTranscription.modelLoading ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
           <Sparkles className="h-4 w-4" />
         )}
-        {transcript ? "Re-transcribe" : "Transcribe with AI"}
+        {localTranscription.modelLoading
+          ? "Loading Whisper model…"
+          : transcript
+          ? "Re-transcribe"
+          : useLocal
+          ? "Transcribe locally (in-browser)"
+          : "Transcribe with cloud ASR"}
       </Button>
 
       {source?.kind === "youtube" && (
         <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-[11px] leading-relaxed text-amber-200/80">
-          Upload the video file to enable transcription — YouTube streams can&apos;t
-          be processed in-browser.
+          YouTube videos are downloaded with yt-dlp first, then transcribed locally.
+          If download fails, the embed can&apos;t be transcribed.
         </p>
       )}
 

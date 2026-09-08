@@ -171,6 +171,74 @@ const server = Bun.serve({
             embedUrl: `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1`,
           }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
         }
+        if (path === "/api/download" && req.method === "POST") {
+          // Download a YouTube video using yt-dlp (if installed on the system)
+          const body = await req.json();
+          const dlUrl = body.url;
+          if (!dlUrl) return new Response(JSON.stringify({ error: "Missing url" }), { status: 400, headers: { "Content-Type": "application/json" } });
+          const id = dlUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/)?.[1];
+          if (!id) return new Response(JSON.stringify({ error: "Invalid YouTube URL" }), { status: 400, headers: { "Content-Type": "application/json" } });
+
+          // Use yt-dlp if available, otherwise return an error
+          const { execSync } = await import("node:child_process");
+          const { existsSync, mkdirSync, readFileSync, unlinkSync, statSync } = await import("node:fs");
+          const { join } = await import("node:path");
+          const { tmpdir } = await import("node:os");
+
+          const dlDir = join(tmpdir(), "clipforge-downloads");
+          if (!existsSync(dlDir)) mkdirSync(dlDir, { recursive: true });
+          const outFile = join(dlDir, `${id}.mp4`);
+
+          if (!existsSync(outFile)) {
+            // Find yt-dlp
+            let ytDlpPath = "";
+            try {
+              ytDlpPath = execSync(
+                process.platform === "win32" ? "where yt-dlp" : "which yt-dlp",
+                { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }
+              ).trim().split("\n")[0].trim();
+            } catch {}
+
+            if (!ytDlpPath) {
+              return new Response(JSON.stringify({
+                error: "yt-dlp not found. Install it from https://github.com/yt-dlp/yt-dlp"
+              }), { status: 500, headers: { "Content-Type": "application/json" } });
+            }
+
+            // Download
+            const { spawn } = await import("node:child_process");
+            await new Promise<void>((resolve, reject) => {
+              const proc = spawn(ytDlpPath, [
+                "-f", "best[ext=mp4][height<=720]/best[height<=720]/best",
+                "--merge-output-format", "mp4",
+                "-o", outFile,
+                "--no-playlist",
+                "--no-warnings",
+                dlUrl,
+              ], { stdio: ["pipe", "pipe", "pipe"] });
+              proc.on("close", (code) => {
+                if (code === 0 && existsSync(outFile)) resolve();
+                else reject(new Error(`yt-dlp exited with code ${code}`));
+              });
+              proc.on("error", reject);
+            });
+          }
+
+          // Stream the file
+          const stat = statSync(outFile);
+          const fileData = readFileSync(outFile);
+          // Clean up after reading
+          try { unlinkSync(outFile); } catch {}
+          return new Response(fileData, {
+            status: 200,
+            headers: {
+              "Content-Type": "video/mp4",
+              "Content-Length": stat.size.toString(),
+              "Content-Disposition": `attachment; filename="${id}.mp4"`,
+              ...corsHeaders,
+            },
+          });
+        }
         return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
       } catch (err: any) {
         return new Response(JSON.stringify({ error: err?.message || "API error" }), { status: 500, headers: { "Content-Type": "application/json" } });

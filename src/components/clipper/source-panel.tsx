@@ -48,23 +48,44 @@ export function SourcePanel() {
     }
     setYtLoading(true);
     try {
-      const res = await fetch(`/api/youtube?url=${encodeURIComponent(ytUrl)}`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+      // 1. Fetch metadata (title, thumbnail)
+      const metaRes = await fetch(`/api/youtube?url=${encodeURIComponent(ytUrl)}`);
+      if (!metaRes.ok) {
+        const data = await metaRes.json().catch(() => ({}));
         throw new Error(data.error || "Failed to fetch YouTube metadata");
       }
-      const data = await res.json();
+      const meta = await metaRes.json();
+
+      // 2. Download the video using yt-dlp so it can be clipped/transcribed/exported
+      toast.info("Downloading video with yt-dlp…");
+      const dlRes = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: ytUrl }),
+      });
+
+      let videoUrl: string;
+      if (dlRes.ok) {
+        // The download returned the video file — create an object URL
+        const blob = await dlRes.blob();
+        videoUrl = URL.createObjectURL(blob);
+        toast.success("Video downloaded — ready to clip, transcribe & export!");
+      } else {
+        // Fallback: use the embed (can preview but can't clip/export)
+        toast.warning("Download failed — using embedded preview (clip/export unavailable)");
+        videoUrl = meta.embedUrl;
+      }
+
       const vs: VideoSource = {
-        kind: "youtube",
-        url: data.embedUrl,
-        name: data.title,
+        kind: dlRes.ok ? "file" : "youtube",
+        url: videoUrl,
+        name: meta.title,
         duration: 0,
-        thumbnail: data.thumbnail,
-        youtubeId: data.id,
+        thumbnail: meta.thumbnail,
+        youtubeId: meta.id,
       };
       setSource(vs);
       clearClips();
-      toast.success(`Loaded "${data.title}"`);
       setYtUrl("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "YouTube load failed");
