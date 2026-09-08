@@ -193,11 +193,29 @@ export function CaptionsPanel() {
         </ScrollArea>
       ) : (
         !loading && transcript && (
-          <div className="rounded-lg border border-dashed border-border/60 p-5 text-center">
-            <Subtitles className="mx-auto h-6 w-6 text-muted-foreground/60" />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Generate short, punchy captions timed to the video.
-            </p>
+          <div className="space-y-3 rounded-xl border border-border/50 bg-gradient-to-b from-card/60 to-card/30 p-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/12 text-primary">
+                <Subtitles className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground/90">Punchy, on-screen text</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  AI splits the transcript into short, timed captions
+                  optimized for vertical video.
+                </p>
+              </div>
+            </div>
+            {/* fake caption preview */}
+            <div className="rounded-lg bg-background/50 p-3 text-center">
+              <span className="rounded bg-black/80 px-2 py-1 text-sm font-extrabold uppercase tracking-tight text-white">
+                this is a caption
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
+              <Sparkles className="h-3 w-3" />
+              4 styles · Bold, Minimal, Karaoke, Boxed
+            </div>
           </div>
         )
       )}

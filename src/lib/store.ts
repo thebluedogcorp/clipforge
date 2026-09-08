@@ -40,8 +40,19 @@ interface ClipperState {
   addClip: (partial?: Partial<Clip>) => string;
   updateClip: (id: string, patch: Partial<Clip>) => void;
   removeClip: (id: string) => void;
+  reorderClips: (from: number, to: number) => void;
+  duplicateClip: (id: string) => void;
   autoSplit: (count: number, lengthSec: number, strategy: "even" | "sequential") => void;
   clearClips: () => void;
+  thumbnails: Record<string, string>; // clipId -> dataURL
+  setThumbnail: (id: string, dataUrl: string) => void;
+
+  // in/out marks (keyboard shortcuts)
+  inMark: number | null;
+  outMark: number | null;
+  setInMark: (t: number | null) => void;
+  setOutMark: (t: number | null) => void;
+  makeClipFromMarks: () => void;
 
   // transcription & captions
   transcript: string | null;
@@ -72,6 +83,8 @@ interface ClipperState {
   setActivePanel: (p: "clips" | "transcript" | "captions" | "export") => void;
   busy: { label: string; progress: number } | null;
   setBusy: (b: { label: string; progress: number } | null) => void;
+  shortcutsOpen: boolean;
+  setShortcutsOpen: (v: boolean) => void;
 }
 
 export const useClipper = create<ClipperState>((set, get) => ({
@@ -123,6 +136,27 @@ export const useClipper = create<ClipperState>((set, get) => ({
       clips: s.clips.filter((c) => c.id !== id),
       selectedClipId: s.selectedClipId === id ? null : s.selectedClipId,
     })),
+  reorderClips: (from, to) =>
+    set((s) => {
+      const next = [...s.clips];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return { clips: next };
+    }),
+  duplicateClip: (id) =>
+    set((s) => {
+      const clip = s.clips.find((c) => c.id === id);
+      if (!clip) return {};
+      const idx = s.clips.indexOf(clip);
+      const copy: Clip = {
+        ...clip,
+        id: uid(),
+        name: `${clip.name} copy`,
+      };
+      const next = [...s.clips];
+      next.splice(idx + 1, 0, copy);
+      return { clips: next, selectedClipId: copy.id };
+    }),
   autoSplit: (count, lengthSec, strategy) => {
     const dur = get().duration;
     if (!dur) return;
@@ -159,7 +193,30 @@ export const useClipper = create<ClipperState>((set, get) => ({
     }
     set({ clips, selectedClipId: clips[0]?.id ?? null });
   },
-  clearClips: () => set({ clips: [], selectedClipId: null }),
+  clearClips: () => set({ clips: [], selectedClipId: null, thumbnails: {} }),
+
+  thumbnails: {},
+  setThumbnail: (id, dataUrl) =>
+    set((s) => ({ thumbnails: { ...s.thumbnails, [id]: dataUrl } })),
+
+  inMark: null,
+  outMark: null,
+  setInMark: (t) => set({ inMark: t }),
+  setOutMark: (t) => set({ outMark: t }),
+  makeClipFromMarks: () => {
+    const s = get();
+    if (s.inMark == null || s.outMark == null || s.outMark <= s.inMark) return;
+    const id = uid();
+    const clip: Clip = {
+      id,
+      name: `Clip ${s.clips.length + 1}`,
+      start: s.inMark,
+      end: s.outMark,
+      color: CLIP_COLORS[s.clips.length % CLIP_COLORS.length],
+      enabled: true,
+    };
+    set({ clips: [...s.clips, clip], selectedClipId: id, inMark: null, outMark: null });
+  },
 
   transcript: null,
   setTranscript: (t) => set({ transcript: t }),
@@ -189,4 +246,6 @@ export const useClipper = create<ClipperState>((set, get) => ({
   setActivePanel: (p) => set({ activePanel: p }),
   busy: null,
   setBusy: (b) => set({ busy: b }),
+  shortcutsOpen: false,
+  setShortcutsOpen: (v) => set({ shortcutsOpen: v }),
 }));

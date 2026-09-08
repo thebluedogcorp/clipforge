@@ -1,6 +1,6 @@
 "use client";
 
-import { Scissors, Download, Package, Sparkles, Github } from "lucide-react";
+import { Scissors, Download, Package, Sparkles, Github, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -118,6 +118,17 @@ export function Header() {
             >
               <Github className="h-4 w-4" />
             </a>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground"
+            onClick={() => useClipper.getState().setShortcutsOpen(true)}
+            aria-label="Keyboard shortcuts"
+            title="Shortcuts (?)"
+          >
+            <Keyboard className="h-4 w-4" />
           </Button>
 
           <Button

@@ -14,14 +14,19 @@ import { VideoPreview } from "@/components/clipper/video-preview";
 import { Timeline } from "@/components/clipper/timeline";
 import { RightPanel } from "@/components/clipper/right-panel";
 import { BusyOverlay } from "@/components/clipper/busy-overlay";
+import { ShortcutsOverlay } from "@/components/clipper/shortcuts-overlay";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { SlidersHorizontal, PanelLeft } from "lucide-react";
 import { useClipper } from "@/lib/store";
+import { useKeyboardShortcuts } from "@/lib/use-keyboard-shortcuts";
+import { useThumbnailGenerator } from "@/lib/use-thumbnail-generator";
 
 export default function Home() {
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  useKeyboardShortcuts();
+  useThumbnailGenerator();
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -113,6 +118,7 @@ export default function Home() {
 
       <Footer />
       <BusyOverlay />
+      <ShortcutsOverlay />
     </div>
   );
 }

@@ -45,6 +45,10 @@ export function Timeline() {
   const addClip = useClipper((s) => s.addClip);
   const autoSplit = useClipper((s) => s.autoSplit);
   const clearClips = useClipper((s) => s.clearClips);
+  const inMark = useClipper((s) => s.inMark);
+  const outMark = useClipper((s) => s.outMark);
+  const setInMark = useClipper((s) => s.setInMark);
+  const setOutMark = useClipper((s) => s.setOutMark);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -449,6 +453,32 @@ export function Timeline() {
               >
                 <span className="absolute -top-5 left-0 rounded bg-primary px-1.5 py-0.5 font-mono text-[9px] text-primary-foreground">
                   {formatTime(creating.end - creating.start, true)}
+                </span>
+              </div>
+            )}
+
+            {/* in/out mark indicators */}
+            {inMark != null && (
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 bg-amber-400"
+                style={{ left: inMark * pxPerSec }}
+                title={`In: ${formatTime(inMark, true)}`}
+              >
+                <div className="absolute -top-0 left-0 h-0 w-0 border-y-4 border-l-4 border-y-transparent border-l-amber-400" />
+                <span className="absolute -top-4 left-1 rounded bg-amber-400 px-1 font-mono text-[8px] font-bold text-black">
+                  IN
+                </span>
+              </div>
+            )}
+            {outMark != null && (
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 bg-fuchsia-400"
+                style={{ left: outMark * pxPerSec }}
+                title={`Out: ${formatTime(outMark, true)}`}
+              >
+                <div className="absolute -top-0 right-0 h-0 w-0 border-y-4 border-r-4 border-y-transparent border-r-fuchsia-400" />
+                <span className="absolute -top-4 right-1 rounded bg-fuchsia-400 px-1 font-mono text-[8px] font-bold text-black">
+                  OUT
                 </span>
               </div>
             )}

@@ -143,12 +143,33 @@ export function TranscriptionPanel() {
         </ScrollArea>
       ) : (
         !loading && (
-          <div className="rounded-lg border border-dashed border-border/60 p-5 text-center">
-            <FileText className="mx-auto h-6 w-6 text-muted-foreground/60" />
-            <p className="mt-2 text-xs text-muted-foreground">
-              The transcript will appear here. AI extracts speech and turns it
-              into editable text.
-            </p>
+          <div className="space-y-3 rounded-xl border border-border/50 bg-gradient-to-b from-card/60 to-card/30 p-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/12 text-primary">
+                <Mic className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground/90">Unlock your audio</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  Generate a searchable transcript to edit captions or jump to
+                  any moment instantly.
+                </p>
+              </div>
+            </div>
+            {/* skeleton preview of upcoming text */}
+            <div className="space-y-1.5 rounded-lg bg-background/40 p-2.5">
+              {[92, 78, 84, 60].map((w, i) => (
+                <div
+                  key={i}
+                  className="h-2.5 rounded-full shimmer"
+                  style={{ width: `${w}%` }}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
+              <FileText className="h-3 w-3" />
+              Runs entirely in your browser · audio is never uploaded
+            </div>
           </div>
         )
       )}
