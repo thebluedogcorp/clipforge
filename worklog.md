@@ -552,3 +552,79 @@ in clip cards, and styling polish.
 4. **Actual `.exe` build script** — `bun build --compile` launcher.
 5. **Real waveform on the timeline thumbnail** — show a mini waveform inside
    each clip region on the timeline itself (not just the clip list).
+
+---
+
+## Phase 6 Update — Cron Review #5 (Timeline Mini-Waveform + Stitch/Crossfade + Shortcuts)
+
+### Current Project Status Assessment
+
+The app from Phase 5 is stable — `GET /` → 200, no console errors. QA via
+agent-browser + VLM confirmed all Phase 1–5 features still work. No critical
+bugs found in the existing flows. This round implemented the top priority
+recommendations from Phase 5: timeline mini-waveform inside clips, crossfade
+transitions in a stitched export, and number-key shortcuts.
+
+### This Round's Completed Modifications
+
+**1. Mini waveform inside timeline clip regions** (`timeline.tsx`)
+- Added a `ClipMiniWave` component that renders dark audio-envelope bars
+  INSIDE each clip region on the timeline (on top of the clip's color), so
+  you can see the audio shape within each individual clip.
+- Bars are sized proportionally to the clip width (8–80 bars), sampled from
+  the store's decoded waveform peaks for the clip's time range.
+- Verified: VLM confirmed "small dark waveform bars inside each of the three
+  colored clip regions on the timeline… dark gray or black vertical lines
+  that represent the audio amplitude."
+
+**2. Stitch + crossfade export** (`export-panel.tsx` + `store.ts`)
+- Added `stitchMode` and `crossfadeSec` (0–2s) to the store.
+- New `stitchExport()` function: extracts each enabled clip as a separate
+  segment file (with aspect crop + optional caption burn-in per segment),
+  probes each segment's duration, then builds an ffmpeg `xfade` + `acrossfade`
+  filter chain to crossfade video and audio between segments.
+- For 2 segments: single xfade → `[vout]`/`[aout]`. For 3+: chained xfade
+  with intermediate labels. Fixed a bug where the map specifier needed
+  bracket notation (`[vout]` not `vout`) — was "Invalid stream specifier".
+- Falls back to a simple concat demuxer when crossfade = 0.
+- UI: a "Stitch into one video" card with a Switch + crossfade duration
+  slider, shown only when there are 2+ clips and a video format is selected.
+  The Export button label changes to "Stitch N clips · MP4".
+- Verified: 2 clips of 5s each + 0.5s crossfade → 9.57s output (matches
+  expected 9.5s); VLM confirmed different frames show different test
+  patterns (stitching worked).
+
+**3. Number-key shortcuts to jump to clip N** (`use-keyboard-shortcuts.ts`)
+- `Shift+1` through `Shift+9` select and seek to clip N's start.
+- Added to the shortcuts overlay under "Editing".
+- (Plain `1`–`4` remain for switching the right panel, as before.)
+
+### Verification Results (this round)
+
+- Lint clean (`bun run lint` → no errors/warnings).
+- `GET /` → 200, no console errors after reload.
+- **Timeline mini-waveform**: VLM confirmed "dark waveform bars inside each
+  of the three colored clip regions."
+- **Stitch export**: 2 clips → 9.57s output with crossfade; VLM confirmed
+  different frames show different test patterns.
+- **Shortcuts**: `Shift+1`–`9` added to the overlay and handler.
+
+### Unresolved Issues / Risks
+
+- **Stitch with 3+ clips** — the xfade chain for 3+ segments is implemented
+  but only tested with 2. The chained-label logic should work but is
+  unverified with a real 3-clip export.
+- **Caption burn-in in stitch mode** — the per-segment burn-in path is
+  implemented but not separately tested in stitch mode.
+- All Phase 1–5 known limitations still apply.
+
+### Priority Recommendations for Next Phase
+
+1. **Verify 3+ clip stitch** with crossfade and per-segment burn-in.
+2. **Mobile timeline bottom-sheet** — collapse the timeline into a swipeable
+   bottom sheet.
+3. **Actual `.exe` build script** — `bun build --compile` launcher.
+4. **Transition variety** — let users pick the xfade transition type
+   (fade, wipe, slide, circleopen, etc.).
+5. **Background music** — let users add a music track that mixes under the
+   clip audio.

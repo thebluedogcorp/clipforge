@@ -51,6 +51,18 @@ export function useKeyboardShortcuts() {
       const dur = s.duration || 0;
       const step = e.shiftKey ? 1 : 5;
 
+      // Shift+1..9 → jump to clip N (select + seek to its start)
+      if (e.shiftKey && /^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        const clip = s.clips[idx];
+        if (clip) {
+          e.preventDefault();
+          s.selectClip(clip.id);
+          videoController.seek(clip.start);
+        }
+        return;
+      }
+
       switch (e.key) {
         case " ":
         case "k":
@@ -176,6 +188,7 @@ export const SHORTCUTS: {
   { keys: "Enter", action: "Create clip from marks", group: "Editing" },
   { keys: "N", action: "New clip at playhead", group: "Editing" },
   { keys: "D", action: "Duplicate selected clip", group: "Editing" },
+  { keys: "Shift 1-9", action: "Jump to clip N", group: "Editing" },
   { keys: "Delete", action: "Delete selected clip", group: "Editing" },
   { keys: "M", action: "Toggle mute", group: "View" },
   { keys: "C", action: "Toggle captions", group: "View" },

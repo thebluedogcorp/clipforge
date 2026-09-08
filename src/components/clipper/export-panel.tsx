@@ -14,11 +14,13 @@ import {
   Film,
   Crop,
   Flame,
+  GitMerge,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -61,6 +63,10 @@ export function ExportPanel() {
   const setAspect = useClipper((s) => s.setAspect);
   const burnCaptions = useClipper((s) => s.burnCaptions);
   const setBurnCaptions = useClipper((s) => s.setBurnCaptions);
+  const stitchMode = useClipper((s) => s.stitchMode);
+  const setStitchMode = useClipper((s) => s.setStitchMode);
+  const crossfadeSec = useClipper((s) => s.crossfadeSec);
+  const setCrossfadeSec = useClipper((s) => s.setCrossfadeSec);
   const [running, setRunning] = useState(false);
 
   const enabledClips = clips.filter((c) => c.enabled);
@@ -298,6 +304,10 @@ export function ExportPanel() {
       downloadSrt();
       return;
     }
+    if (stitchMode && enabledClips.length > 1 && format !== "gif" && format !== "mp3") {
+      await stitchExport();
+      return;
+    }
     setBusy({ label: "Exporting clips…", progress: 0 });
     for (let i = 0; i < enabledClips.length; i++) {
       setBusy({ label: `Exporting ${enabledClips[i].name}…`, progress: i / enabledClips.length });
@@ -305,6 +315,196 @@ export function ExportPanel() {
     }
     setBusy(null);
     toast.success(`Exported ${enabledClips.length} clips`);
+  }
+
+  /**
+   * Stitch all enabled clips into a single output video, with optional
+   * crossfade transitions between them. Uses ffmpeg's xfade filter.
+   */
+  async function stitchExport() {
+    if (!source || source.kind !== "file") return;
+    const xf = useClipper.getState().crossfadeSec;
+    const aspectVal = useClipper.getState().aspect;
+    const burn = useClipper.getState().burnCaptions;
+    const caps = useClipper.getState().captions;
+    const capColor = useClipper.getState().captionColor;
+    const capSize = useClipper.getState().captionSize;
+    const capPos = useClipper.getState().captionPosition;
+
+    const job: ExportJob = {
+      id: uid(),
+      clipId: "stitch",
+      clipName: "Stitched compilation",
+      format,
+      status: "processing",
+      progress: 0,
+    };
+    addJob(job);
+    setRunning(true);
+    setBusy({ label: "Stitching clips…", progress: 0.05 });
+
+    try {
+      const ffmpeg = await getFFmpeg();
+      const inputExt = source.name.split(".").pop() || "mp4";
+      const inputName = `in_stitch.${inputExt}`;
+      await ffmpeg.writeFile(inputName, await fetchFile(source.url));
+
+      // write font for burn-in if needed
+      if (burn && caps.length > 0) {
+        try {
+          await ffmpeg.createDir("/tmp/fonts").catch(() => {});
+          const fontBlob = await (await fetch("/fonts/DejaVuSans-Bold.ttf")).arrayBuffer();
+          await ffmpeg.writeFile("/tmp/fonts/DejaVuSans-Bold.ttf", new Uint8Array(fontBlob));
+        } catch {}
+      }
+
+      // extract each clip as a separate segment file
+      const segNames: string[] = [];
+      const segDurations: number[] = [];
+      for (let i = 0; i < enabledClips.length; i++) {
+        const clip = enabledClips[i];
+        const segName = `seg_${i}.${FORMAT_META[format].ext}`;
+        const segArgs: string[] = [
+          "-i", inputName,
+          "-ss", String(clip.start),
+          "-to", String(clip.end),
+          "-c:v", "libx264",
+          "-preset", "veryfast",
+          "-crf", "23",
+          "-c:a", "aac",
+          "-b:a", "128k",
+        ];
+        // aspect crop
+        if (aspectVal !== "16:9") {
+          const targets: Record<string, number> = {
+            "9:16": 9 / 16, "1:1": 1, "4:5": 4 / 5,
+          };
+          const tgt = targets[aspectVal];
+          segArgs.push("-vf", `crop='if(gt(a\\,${tgt})\\,ih*${tgt}\\,iw)':'if(gt(a\\,${tgt})\\,ih\\,iw/${tgt})'`);
+          segArgs.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "23");
+        }
+        // burn captions for this segment
+        if (burn && caps.length > 0) {
+          const segCaps = caps
+            .filter((c) => c.start >= clip.start - 0.05 && c.end <= clip.end + 0.05)
+            .map((c) => ({ ...c, start: c.start - clip.start, end: c.end - clip.start }));
+          if (segCaps.length > 0) {
+            const srtName = `subs_${i}.srt`;
+            await ffmpeg.writeFile(srtName, new TextEncoder().encode(buildSrt(segCaps)));
+            const hex = capColor.replace("#", "");
+            const assColor = `&H00${hex.slice(4, 6)}${hex.slice(2, 4)}${hex.slice(0, 2)}`.toUpperCase();
+            const marginV = Math.round(((100 - capPos) / 100) * 720 * 0.85);
+            const burnFilter = `subtitles=${srtName}:fontsdir=/tmp/fonts:force_style='FontName=DejaVu Sans,FontSize=${capSize},PrimaryColour=${assColor},OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,MarginV=${marginV},Alignment=2'`;
+            const existingVf = segArgs.indexOf("-vf");
+            if (existingVf >= 0) {
+              segArgs[existingVf + 1] = segArgs[existingVf + 1] + "," + burnFilter;
+            } else {
+              segArgs.push("-vf", burnFilter);
+            }
+          }
+        }
+        segArgs.push(segName);
+        await ffmpeg.exec(segArgs);
+        segNames.push(segName);
+        // read duration via probe
+        let segDur = clip.end - clip.start;
+        try {
+          const probeLogs: string[] = [];
+          const onLog = ({ message }: { message: string }) => probeLogs.push(message);
+          ffmpeg.on("log", onLog);
+          await ffmpeg.exec(["-i", segName, "-t", "0.1", "-f", "null", "-"]);
+          ffmpeg.off("log", onLog);
+          const durLine = probeLogs.find((l) => /Duration:\s*\d{2}:\d{2}:\d{2}\.\d+/.test(l));
+          if (durLine) {
+            const m = durLine.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d+)/);
+            if (m) segDur = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]) + parseInt(m[4]) / 100;
+          }
+        } catch {}
+        segDurations.push(segDur);
+        setBusy({ label: `Preparing clip ${i + 1}/${enabledClips.length}…`, progress: 0.05 + (i / enabledClips.length) * 0.4 });
+      }
+
+      setBusy({ label: "Stitching with crossfade…", progress: 0.5 });
+
+      // build the concat + xfade filter chain
+      const outName = `out_stitch.${FORMAT_META[format].ext}`;
+      const inputs: string[] = [];
+      for (const n of segNames) inputs.push("-i", n);
+
+      if (xf > 0 && segNames.length > 1) {
+        // build xfade chain: [0:v][1:v]xfade=duration=D:offset=T1[v01]; [v01][2]xfade...
+        const filterParts: string[] = [];
+        const totalSegs = segNames.length;
+        // For 2 segments: one xfade, output label = "vout"
+        // For 3+: first xfade -> [v0], subsequent -> [v1]...[vout]
+        const firstLabel = totalSegs === 2 ? "vout" : "v0";
+        filterParts.push(
+          `[0:v][1:v]xfade=transition=fade:duration=${xf}:offset=${(segDurations[0] - xf).toFixed(3)}[${firstLabel}]`
+        );
+        let accumDur = segDurations[0] + segDurations[1] - xf;
+        for (let i = 2; i < totalSegs; i++) {
+          const offset = (accumDur - xf).toFixed(3);
+          const label = i === totalSegs - 1 ? "vout" : `v${i - 1}`;
+          filterParts.push(`[v${i - 2}][${i}:v]xfade=transition=fade:duration=${xf}:offset=${offset}[${label}]`);
+          accumDur += segDurations[i] - xf;
+        }
+        // audio crossfade (acrossfade) chain
+        if (totalSegs === 2) {
+          filterParts.push(`[0:a][1:a]acrossfade=d=${xf}[aout]`);
+        } else {
+          filterParts.push(`[0:a][1:a]acrossfade=d=${xf}[a0]`);
+          for (let i = 2; i < totalSegs; i++) {
+            const label = i === totalSegs - 1 ? "aout" : `a${i - 1}`;
+            filterParts.push(`[a${i - 2}][${i}:a]acrossfade=d=${xf}[${label}]`);
+          }
+        }
+        const finalV = "[vout]";
+        const finalA = "[aout]";
+        const mapArgs = ["-map", finalV, "-map", finalA];
+        const cArgs = format === "mp4"
+          ? ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k"]
+          : ["-c:v", "libvpx", "-b:v", "1M", "-c:a", "libvorbis"];
+        const stitchArgs = [
+          ...inputs,
+          "-filter_complex", filterParts.join(";"),
+          ...mapArgs,
+          ...cArgs,
+          outName,
+        ];
+        await ffmpeg.exec(stitchArgs);
+      } else {
+        // no crossfade — simple concat demuxer
+        const concatList = segNames.map((n) => `file '${n}'`).join("\n");
+        await ffmpeg.writeFile("concat.txt", new TextEncoder().encode(concatList));
+        await ffmpeg.exec([
+          "-f", "concat", "-safe", "0", "-i", "concat.txt",
+          "-c", "copy",
+          outName,
+        ]);
+      }
+
+      const data = await ffmpeg.readFile(outName);
+      const blob = new Blob([data as Uint8Array], { type: FORMAT_META[format].mime });
+      const url = URL.createObjectURL(blob);
+      updateJob(job.id, { status: "done", progress: 1, url, size: blob.size });
+
+      // cleanup
+      try {
+        await ffmpeg.deleteFile(inputName);
+        for (const n of segNames) await ffmpeg.deleteFile(n);
+        await ffmpeg.deleteFile(outName);
+      } catch {}
+
+      setBusy(null);
+      toast.success("Stitched compilation exported");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Stitch export failed";
+      updateJob(job.id, { status: "error", error: msg });
+      toast.error(msg);
+    } finally {
+      setRunning(false);
+      setBusy(null);
+    }
   }
 
   const Meta = FORMAT_META[format];
@@ -401,9 +601,49 @@ export function ExportPanel() {
         </div>
       )}
 
+      {/* Stitch mode (compile all clips into one video with crossfade) */}
+      {format !== "gif" && format !== "mp3" && format !== "srt" && enabledClips.length > 1 && (
+        <div className="space-y-2.5 rounded-lg border border-border/50 bg-card/40 p-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <GitMerge className={`h-4 w-4 ${stitchMode ? "text-primary" : "text-muted-foreground"}`} />
+              <div>
+                <Label className="text-xs font-medium">Stitch into one video</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Compile {enabledClips.length} clips into a single file
+                </p>
+              </div>
+            </div>
+            <Switch checked={stitchMode} onCheckedChange={setStitchMode} />
+          </div>
+          {stitchMode && (
+            <div className="space-y-1 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] text-muted-foreground">Crossfade duration</Label>
+                <span className="font-mono text-[11px] text-foreground/80">{crossfadeSec.toFixed(1)}s</span>
+              </div>
+              <Slider
+                value={[crossfadeSec]}
+                min={0}
+                max={2}
+                step={0.1}
+                onValueChange={([v]) => setCrossfadeSec(v)}
+              />
+              {crossfadeSec === 0 && (
+                <p className="text-[10px] text-muted-foreground/70">
+                  No transition — clips are concatenated back-to-back.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <Button onClick={exportAll} disabled={!canExport && format !== "srt"} className="w-full gap-2">
         {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-        Export {enabledClips.length} clip{enabledClips.length === 1 ? "" : "s"} · {Meta.label}
+        {stitchMode && enabledClips.length > 1 && format !== "gif" && format !== "mp3" && format !== "srt"
+          ? `Stitch ${enabledClips.length} clips · ${Meta.label}`
+          : `Export ${enabledClips.length} clip${enabledClips.length === 1 ? "" : "s"} · ${Meta.label}`}
       </Button>
 
       {jobs.length > 0 && (

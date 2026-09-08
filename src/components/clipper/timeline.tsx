@@ -450,6 +450,12 @@ export function Timeline() {
                 >
                   {/* gloss */}
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/25 to-transparent" />
+                  {/* mini waveform inside the clip (dark on the clip color) */}
+                  <ClipMiniWave
+                    start={clip.start}
+                    end={clip.end}
+                    width={width}
+                  />
                   {/* label */}
                   <div className="pointer-events-none absolute left-2 top-1.5 flex items-center gap-1.5">
                     <GripVertical className="h-3 w-3 text-black/50" />
@@ -541,6 +547,53 @@ export function Timeline() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A mini waveform rendered INSIDE a clip region on the timeline.
+ * Shows the audio envelope for the clip's time range as dark bars on top of
+ * the clip's color, so you can see the audio shape within each clip.
+ */
+function ClipMiniWave({
+  start,
+  end,
+  width,
+}: {
+  start: number;
+  end: number;
+  width: number;
+}) {
+  const wave = useClipper((s) => s.waveform);
+  const bars = Math.max(8, Math.min(80, Math.floor(width / 4)));
+  const heights = useMemo(() => {
+    if (!wave || wave.peaks.length === 0) return new Array(bars).fill(0.2);
+    const srcDur = wave.duration || 1;
+    const out: number[] = [];
+    for (let i = 0; i < bars; i++) {
+      const tStart = start + ((end - start) * i) / bars;
+      const tEnd = start + ((end - start) * (i + 1)) / bars;
+      const pStart = Math.floor((tStart / srcDur) * wave.peaks.length);
+      const pEnd = Math.max(pStart + 1, Math.floor((tEnd / srcDur) * wave.peaks.length));
+      let peak = 0;
+      for (let j = pStart; j < pEnd && j < wave.peaks.length; j++) {
+        if (wave.peaks[j] > peak) peak = wave.peaks[j];
+      }
+      out.push(Math.max(0.1, peak));
+    }
+    return out;
+  }, [wave, start, end, bars]);
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-1/2 flex h-1/2 -translate-y-1/2 items-center justify-center gap-px overflow-hidden px-1 opacity-60">
+      {heights.map((h, i) => (
+        <div
+          key={i}
+          className="w-px shrink-0 rounded-full bg-black/60"
+          style={{ height: `${h * 80}%` }}
+        />
+      ))}
     </div>
   );
 }

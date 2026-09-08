@@ -103,6 +103,10 @@ interface ClipperState {
   clearExportJobs: () => void;
   exportFormat: ExportFormat;
   setExportFormat: (f: ExportFormat) => void;
+  stitchMode: boolean;
+  setStitchMode: (v: boolean) => void;
+  crossfadeSec: number;
+  setCrossfadeSec: (n: number) => void;
 
   // ui
   activePanel: "clips" | "transcript" | "captions" | "export";
@@ -326,6 +330,10 @@ export const useClipper = create<ClipperState>((set, get) => ({
   clearExportJobs: () => set({ exportJobs: [] }),
   exportFormat: "mp4",
   setExportFormat: (f) => set({ exportFormat: f }),
+  stitchMode: false,
+  setStitchMode: (v) => set({ stitchMode: v }),
+  crossfadeSec: 0.5,
+  setCrossfadeSec: (n) => set({ crossfadeSec: n }),
 
   activePanel: "clips",
   setActivePanel: (p) => set({ activePanel: p }),
