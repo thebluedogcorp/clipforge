@@ -217,7 +217,7 @@ const server = Bun.serve({
             const { spawn } = await import("node:child_process");
             await new Promise<void>((resolve, reject) => {
               const proc = spawn(ytDlpPath, [
-                "-f", "best[ext=mp4][height<=720]/best[height<=720]/best",
+                "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
                 "--merge-output-format", "mp4",
                 "-o", outFile,
                 "--no-playlist",
@@ -253,31 +253,85 @@ const server = Bun.serve({
           const tool = body.tool;
           if (!tool) return new Response(JSON.stringify({ error: "Missing tool" }), { status: 400, headers: { "Content-Type": "application/json" } });
 
-          const { existsSync, mkdirSync, writeFileSync, chmodSync } = await import("node:fs");
+          const { existsSync, mkdirSync, writeFileSync, chmodSync, unlinkSync, readdirSync, renameSync } = await import("node:fs");
+          const { execSync } = await import("node:child_process");
           const binDir = join(exeDir, "bin");
           if (!existsSync(binDir)) mkdirSync(binDir, { recursive: true });
 
-          let dlUrl: string, fileName: string;
+          let dlUrl: string, fileName: string, binaryName: string;
           if (tool === "yt-dlp") {
-            if (process.platform === "win32") { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"; fileName = "yt-dlp.exe"; }
-            else if (process.platform === "darwin") { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"; fileName = "yt-dlp"; }
-            else { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"; fileName = "yt-dlp"; }
+            if (process.platform === "win32") { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"; fileName = "yt-dlp.exe"; binaryName = "yt-dlp.exe"; }
+            else if (process.platform === "darwin") { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"; fileName = "yt-dlp"; binaryName = "yt-dlp"; }
+            else { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"; fileName = "yt-dlp"; binaryName = "yt-dlp"; }
           } else if (tool === "ffmpeg") {
-            if (process.platform === "win32") { dlUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"; fileName = "ffmpeg.zip"; }
-            else if (process.platform === "darwin") { dlUrl = "https://evermeet.cx/ffmpeg/getrelease/zip"; fileName = "ffmpeg.zip"; }
-            else { dlUrl = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"; fileName = "ffmpeg.tar.xz"; }
+            if (process.platform === "win32") { dlUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"; fileName = "ffmpeg.zip"; binaryName = "ffmpeg.exe"; }
+            else if (process.platform === "darwin") { dlUrl = "https://evermeet.cx/ffmpeg/getrelease/zip"; fileName = "ffmpeg.zip"; binaryName = "ffmpeg"; }
+            else { dlUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"; fileName = "ffmpeg.tar.xz"; binaryName = "ffmpeg"; }
           } else {
             return new Response(JSON.stringify({ error: `Unknown tool: ${tool}` }), { status: 400, headers: { "Content-Type": "application/json" } });
           }
 
           const outPath = join(binDir, fileName);
+          const finalPath = join(binDir, binaryName);
           try {
-            const res = await fetch(dlUrl);
-            if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+            const res = await fetch(dlUrl, { redirect: "follow" });
+            if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
             const buf = new Uint8Array(await res.arrayBuffer());
+            if (buf.byteLength < 1000) throw new Error("Downloaded file too small");
             writeFileSync(outPath, buf);
-            if (process.platform !== "win32" && tool === "yt-dlp") chmodSync(outPath, 0o755);
-            return new Response(JSON.stringify({ success: true, tool, path: outPath, message: `${tool} installed to ${outPath}` }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+
+            if (tool === "yt-dlp") {
+              if (process.platform !== "win32") chmodSync(outPath, 0o755);
+              return new Response(JSON.stringify({ success: true, tool, path: outPath, message: `yt-dlp installed to ${outPath}` }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+
+            // ffmpeg: extract the binary from the archive
+            if (fileName.endsWith(".zip")) {
+              try {
+                if (process.platform === "win32") {
+                  execSync(`powershell -Command "Expand-Archive -Path '${outPath}' -DestinationPath '${binDir}\\ff-temp' -Force"`, { stdio: "pipe" });
+                } else {
+                  execSync(`unzip -o '${outPath}' -d '${binDir}'`, { stdio: "pipe" });
+                }
+              } catch {}
+            } else if (fileName.endsWith(".tar.xz")) {
+              try {
+                execSync(`tar -xf '${outPath}' -C '${binDir}'`, { stdio: "pipe" });
+              } catch {}
+            }
+
+            // Find the extracted ffmpeg binary (might be in a subdirectory)
+            function findBin(dir: string, name: string): string | null {
+              try {
+                for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                  const fp = join(dir, entry.name);
+                  if (entry.isDirectory()) {
+                    const found = findBin(fp, name);
+                    if (found) return found;
+                  } else if (entry.name === name) {
+                    return fp;
+                  }
+                }
+              } catch {}
+              return null;
+            }
+
+            const found = findBin(binDir, binaryName);
+            if (found && found !== finalPath) {
+              try { renameSync(found, finalPath); } catch {}
+            }
+            if (existsSync(finalPath) && process.platform !== "win32") {
+              chmodSync(finalPath, 0o755);
+            }
+
+            // Clean up archive
+            try { unlinkSync(outPath); } catch {}
+
+            if (existsSync(finalPath)) {
+              return new Response(JSON.stringify({ success: true, tool, path: finalPath, message: `ffmpeg installed to ${finalPath}` }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            } else {
+              return new Response(JSON.stringify({ error: "ffmpeg downloaded but extraction failed" }), { status: 500, headers: { "Content-Type": "application/json" } });
+            }
           } catch (err: any) {
             return new Response(JSON.stringify({ error: `Failed: ${err?.message}` }), { status: 500, headers: { "Content-Type": "application/json" } });
           }
