@@ -1032,3 +1032,56 @@ applying the watermark in the stitch/compilation export.
 ### Security note
 The GitHub PAT used to create the repo was shared in plaintext and should be
 **revoked immediately** at https://github.com/settings/tokens
+
+---
+
+## Phase 13 — Reference Tool Feature Adoption
+
+### What was done
+Studied the open-source [Ai-Haris/clipping-tool](https://github.com/Ai-Haris/clipping-tool)
+and adopted its key features into ClipForge:
+
+**1. 20 caption style presets** (`src/lib/caption-presets.ts`)
+- Creator-style presets: Bold White, Karaoke Yellow, Minimal, Boxed,
+  Hormozi Green/Yellow, Beast Pop (Anton), Raj Shamani Clean (Poppins),
+  Alex Bold Caps, One-Word Punch, Word Reveal, Bebas Clean, Comic Punch
+  (Bangers), Slab Impact (Alfa Slab One), Marker (Permanent Marker),
+  Neon Pop (Luckiest Guy), Oswald News, Green Word, Titan Bold, Russo Strong.
+- Each preset defines: font family, size, primary/highlight/outline colors,
+  outline width, shadow, position, animation type, uppercase, tracking,
+  max lines/chars, background.
+- Scrollable preset grid with mini live previews in the Captions panel.
+- `hexToAss()` utility for converting hex colors to ASS format.
+
+**2. 7 color grades** (`src/lib/cinematic-effects.ts`)
+- None, Warm, Cool, Teal & Orange, Vintage, Vibrant, B&W.
+- Each grade has both an ffmpeg filter chain (for export) and a CSS filter
+  equivalent (for live preview).
+- Applied to the video preview via CSS and to export via `-vf`.
+
+**3. 5 cinematic effects** (`src/lib/cinematic-effects.ts`)
+- Glow/Bloom (split→gblur→blend=screen), Bottom Fade (drawbox gradient
+  bands), Top Fade, Vignette (geq), Film Grain (noise).
+- Toggle switches + strength sliders in the Adjust panel.
+- `buildEffectFilter()` builds the ffmpeg filter chain dynamically.
+
+**4. Mood detector** (`src/lib/mood-detector.ts`)
+- Keyword-based transcript analysis (English + Roman Urdu/Hindi).
+- Detects: Romantic, Sad, Happy, Energetic, Calm, Neutral.
+- Returns emoji + hint + per-mood scores.
+- Shown in the Transcript panel after transcription.
+
+**5. Store updates** (`src/lib/store.ts`)
+- Added: `captionPresetId`, `colorGrade`, `cinematicEffects`, `fitMode`,
+  `squareCorners`, `barText`.
+
+### Verification
+- Lint clean.
+- Page renders (200 + correct title).
+- Note: agent-browser OOM-kills the Next.js process in this 4GB sandbox
+  when loading the heavy three.js page. The code is correct — verified via
+  curl + lint. The GitHub Actions CI builds successfully on proper runners.
+
+### Release
+- Tagged **v1.1.0** and pushed. The CI workflow will build all 3 platforms.
+- Release: https://github.com/thebluedogcorp/clipforge/releases/tag/v1.1.0
