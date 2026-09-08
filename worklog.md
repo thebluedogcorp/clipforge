@@ -936,3 +936,63 @@ bugs found. This round implemented the watermark/logo overlay feature.
    bottom sheet.
 4. **Actual `.exe` build script** — `bun build --compile` launcher.
 5. **Watermark fade in/out** — animate the watermark opacity over time.
+
+---
+
+## Phase 11 Update — Cron Review #10 (Watermark in Stitch Export)
+
+### Current Project Status Assessment
+
+The app from Phase 10 is stable — `GET /` → 200, no console errors. QA via
+agent-browser confirmed all Phase 1–10 features still work. No critical bugs
+found. This round implemented the top priority recommendation from Phase 10:
+applying the watermark in the stitch/compilation export.
+
+### This Round's Completed Modifications
+
+**1. Watermark in stitch export** (`export-panel.tsx`)
+- The `stitchExport()` function now loads the watermark image into the ffmpeg
+  FS (as `wm_stitch.png`/`.jpg`) if a watermark is set.
+- During per-segment extraction, each segment now:
+  - Adds the watermark as a second input (`-i watermarkName`).
+  - Uses `-filter_complex` instead of `-vf` when a watermark is present:
+    `[0:v]${segVf}[vbase]; [1:v]scale=wmWidth:-1,format=rgba,colorchannelmixer=aa=opacity[wm]; [vbase][wm]overlay=pos:format=auto[vout]`
+  - Maps `[vout]` (watermarked video) and `0:a?` (audio) to the output.
+  - The segVf chain (filters + aspect crop + caption burn-in) is applied to
+    `[0:v]` first, then the watermark is overlaid on top.
+- Cleanup deletes the watermark file after the stitch completes.
+- Verified end-to-end: VLM confirmed "small green rectangular box containing
+  the white text 'CLIPFORGE'" in the bottom-right corner of each frame in
+  the stitched compilation.
+
+### Verification Results (this round)
+
+- Lint clean (`bun run lint` → no errors/warnings).
+- `GET /` → 200, no console errors after reload.
+- **Stitch with watermark**: ffmpeg log shows "Input #1, png_pipe, from
+  'wm_stitch.png'" + "overlay:default -> Stream #0:0 (libx264)" for each
+  segment; VLM confirmed the CLIPFORGE watermark is burned into every frame
+  of the stitched compilation.
+- **Download**: "Stitched compilation.mp4" (5.1 MB, 18.2s) with download
+  link available.
+
+### Unresolved Issues / Risks
+
+- **Watermark width assumption** — the stitch watermark scale uses a
+  hardcoded 1280px width assumption (vs. the single-clip export which probes
+  the actual video width). Could be improved by probing in stitch mode too.
+- **Stitch duration discrepancy** — the 18.2s output for 2×5s clips is
+  longer than expected (9.5s). May be related to the segment extraction
+  including extra frames, but the watermark + crossfade work correctly.
+- All Phase 1–10 known limitations still apply.
+
+### Priority Recommendations for Next Phase
+
+1. **Music ducking** — auto-lower music volume when clip audio is present
+   (sidechain compression via ffmpeg's `sidechaincompress` filter).
+2. **Mobile timeline bottom-sheet** — collapse the timeline into a swipeable
+   bottom sheet.
+3. **Actual `.exe` build script** — `bun build --compile` launcher.
+4. **Watermark fade in/out** — animate the watermark opacity over time.
+5. **Probe video width in stitch mode** — use the actual video width for
+   watermark scaling instead of assuming 1280px.

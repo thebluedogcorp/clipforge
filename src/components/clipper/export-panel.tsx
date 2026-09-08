@@ -446,6 +446,7 @@ export function ExportPanel() {
     const capSize = useClipper.getState().captionSize;
     const capPos = useClipper.getState().captionPosition;
     const flt = useClipper.getState().filters;
+    const wm = useClipper.getState().watermark;
 
     // build the filter string for video color adjustments (used per-segment)
     const eqParts: string[] = [];
@@ -483,6 +484,19 @@ export function ExportPanel() {
         } catch {}
       }
 
+      // load watermark image if set (applied per-segment)
+      let watermarkName: string | null = null;
+      if (wm.src) {
+        try {
+          const wmBlob = await (await fetch(wm.src)).blob();
+          const ext = wmBlob.type.includes("png") ? "png" : "jpg";
+          watermarkName = `wm_stitch.${ext}`;
+          await ffmpeg.writeFile(watermarkName, new Uint8Array(await wmBlob.arrayBuffer()));
+        } catch {
+          watermarkName = null;
+        }
+      }
+
       // extract each clip as a separate segment file
       const segNames: string[] = [];
       const segDurations: number[] = [];
@@ -493,12 +507,13 @@ export function ExportPanel() {
           "-i", inputName,
           "-ss", String(clip.start),
           "-to", String(clip.end),
-          "-c:v", "libx264",
-          "-preset", "veryfast",
-          "-crf", "23",
-          "-c:a", "aac",
-          "-b:a", "128k",
         ];
+        // add watermark as second input if present
+        if (watermarkName) {
+          segArgs.push("-i", watermarkName);
+        }
+        segArgs.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k");
+
         // build the vf chain: filters + aspect crop + caption burn-in
         const segVf: string[] = [];
         if (filterEq) segVf.push(filterEq);
@@ -524,7 +539,22 @@ export function ExportPanel() {
             segVf.push(`subtitles=${srtName}:fontsdir=/tmp/fonts:force_style='FontName=DejaVu Sans,FontSize=${capSize},PrimaryColour=${assColor},OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,MarginV=${marginV},Alignment=2'`);
           }
         }
-        if (segVf.length > 0) {
+
+        // if watermark is present, use filter_complex with overlay
+        if (watermarkName) {
+          const wmWidth = Math.round(1280 * (wm.size / 100)); // assume 1280p; probe would be better
+          const wmOpacity = `format=rgba,colorchannelmixer=aa=${wm.opacity}`;
+          const posMap: Record<string, string> = {
+            "top-left": "10:10",
+            "top-right": "main_w-overlay_w-10:10",
+            "bottom-left": "10:main_h-overlay_h-10",
+            "bottom-right": "main_w-overlay_w-10:main_h-overlay_h-10",
+            center: "(main_w-overlay_w)/2:(main_h-overlay_h)/2",
+          };
+          const vChain = segVf.length > 0 ? `[0:v]${segVf.join(",")}[vbase]` : "[0:v]copy[vbase]";
+          const fc = `${vChain};[1:v]scale=${wmWidth}:-1,${wmOpacity}[wm];[vbase][wm]overlay=${posMap[wm.position]}:format=auto[vout]`;
+          segArgs.push("-filter_complex", fc, "-map", "[vout]", "-map", "0:a?");
+        } else if (segVf.length > 0) {
           segArgs.push("-vf", segVf.join(","));
         }
         segArgs.push(segName);
@@ -654,9 +684,12 @@ export function ExportPanel() {
         }
       }
 
-      // cleanup music file if any
+      // cleanup music + watermark files if any
       if (musicName) {
         try { await ffmpeg.deleteFile(musicName); } catch {}
+      }
+      if (watermarkName) {
+        try { await ffmpeg.deleteFile(watermarkName); } catch {}
       }
 
       const data = await ffmpeg.readFile(outName);
