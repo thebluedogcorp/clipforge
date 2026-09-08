@@ -107,6 +107,15 @@ interface ClipperState {
   setStitchMode: (v: boolean) => void;
   crossfadeSec: number;
   setCrossfadeSec: (n: number) => void;
+  transitionType: "fade" | "wipeleft" | "wiperight" | "slideup" | "circleopen" | "dissolve" | "radial";
+  setTransitionType: (t: "fade" | "wipeleft" | "wiperight" | "slideup" | "circleopen" | "dissolve" | "radial") => void;
+  // background music
+  musicTrack: string | null;
+  setMusicTrack: (url: string | null) => void;
+  musicVolume: number;
+  setMusicVolume: (v: number) => void;
+  musicMuted: boolean;
+  setMusicMuted: (v: boolean) => void;
 
   // ui
   activePanel: "clips" | "transcript" | "captions" | "export";
@@ -334,6 +343,14 @@ export const useClipper = create<ClipperState>((set, get) => ({
   setStitchMode: (v) => set({ stitchMode: v }),
   crossfadeSec: 0.5,
   setCrossfadeSec: (n) => set({ crossfadeSec: n }),
+  transitionType: "fade",
+  setTransitionType: (t) => set({ transitionType: t }),
+  musicTrack: null,
+  setMusicTrack: (url) => set({ musicTrack: url }),
+  musicVolume: 0.4,
+  setMusicVolume: (v) => set({ musicVolume: v }),
+  musicMuted: false,
+  setMusicMuted: (v) => set({ musicMuted: v }),
 
   activePanel: "clips",
   setActivePanel: (p) => set({ activePanel: p }),

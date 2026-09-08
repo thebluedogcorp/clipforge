@@ -628,3 +628,77 @@ transitions in a stitched export, and number-key shortcuts.
    (fade, wipe, slide, circleopen, etc.).
 5. **Background music** — let users add a music track that mixes under the
    clip audio.
+
+---
+
+## Phase 7 Update — Cron Review #6 (3+ Clip Stitch Verified + Transition Variety + Background Music)
+
+### Current Project Status Assessment
+
+The app from Phase 6 is stable — `GET /` → 200, no console errors. QA via
+agent-browser confirmed all Phase 1–6 features still work. This round
+verified the unverified 3-clip stitch from Phase 6, then implemented the top
+priority recommendations: transition variety and background music.
+
+### This Round's Completed Modifications
+
+**1. Verified 3+ clip stitch with crossfade** (`export-panel.tsx`)
+- Tested 3 clips × 4s + 0.5s crossfade → 11.03s output (matches expected 11s
+  = 3×4 - 2×0.5). VLM confirmed the frames advance through the stitched
+  segments. The "Invalid stream specifier: vout" bug from Phase 6 is
+  definitively fixed for both 2-clip and 3+clip cases.
+
+**2. Transition variety** (`store.ts` + `export-panel.tsx`)
+- Added `transitionType` state with 7 options: fade, dissolve, wipeleft,
+  wiperight, slideup, circleopen, radial.
+- The stitch export's xfade filter now uses the selected transition type for
+  all xfade operations in the chain.
+- UI: a row of transition-type chips appears in the stitch card when
+  crossfade > 0. Active chip is highlighted with primary tint.
+- Verified: "circleopen" transition stitch → 9.57s output, no errors.
+
+**3. Background music** (`store.ts` + `export-panel.tsx`)
+- Added `musicTrack` (object URL | null), `musicVolume` (0–1), `musicMuted`
+  to the store.
+- The stitch export now:
+  - Fetches the music blob, writes it to the ffmpeg FS as an extra input.
+  - In crossfade mode: adds `aloop` + `atrim` + `volume` + `amix` filters to
+    loop the music to the total output duration, set its volume, and mix it
+    under the clip audio.
+  - In concat mode (no crossfade): same mix approach via a separate
+    filter_complex.
+- UI: a "Background music" card with:
+  - A dashed drop zone for audio files (MP3/WAV) when no track is loaded.
+  - When a track is loaded: music icon (turns primary), volume slider with
+    live % readout, "Replace track" uploader, "Remove" button.
+- Verified: stitch with music → "Stitched compilation MP4" (2 jobs), ffmpeg
+  log shows "Input #2, wav, from 'music.wav'" and "amix:default -> Stream".
+
+### Verification Results (this round)
+
+- Lint clean (`bun run lint` → no errors/warnings).
+- `GET /` → 200, no console errors after reload.
+- **3-clip stitch**: 11.03s output (matches 3×4 - 2×0.5 = 11s); VLM confirmed.
+- **Circle transition**: 9.57s output, no errors.
+- **Background music**: stitch with music → "Stitched compilation MP4",
+  ffmpeg log confirms amix.
+
+### Unresolved Issues / Risks
+
+- **Music in single-clip export** — the music mix is only implemented in
+  the stitch path. Single-clip export doesn't mix music (could be added).
+- **Music preview** — there's no in-app audio preview of the music track
+  before export.
+- All Phase 1–6 known limitations still apply.
+
+### Priority Recommendations for Next Phase
+
+1. **Music in single-clip export** — apply the same amix logic to individual
+   clip exports.
+2. **Music preview** — a small play button on the music card to hear the
+   track at the chosen volume.
+3. **Mobile timeline bottom-sheet** — collapse the timeline into a swipeable
+   bottom sheet.
+4. **Actual `.exe` build script** — `bun build --compile` launcher.
+5. **More transition types** — ffmpeg supports ~30 xfade transitions; add
+   more (smoothleft, circleclose, hlwind, etc.).

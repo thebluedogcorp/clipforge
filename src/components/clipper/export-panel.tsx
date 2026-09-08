@@ -15,6 +15,9 @@ import {
   Crop,
   Flame,
   GitMerge,
+  Music,
+  UploadCloud,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -67,6 +70,12 @@ export function ExportPanel() {
   const setStitchMode = useClipper((s) => s.setStitchMode);
   const crossfadeSec = useClipper((s) => s.crossfadeSec);
   const setCrossfadeSec = useClipper((s) => s.setCrossfadeSec);
+  const transitionType = useClipper((s) => s.transitionType);
+  const setTransitionType = useClipper((s) => s.setTransitionType);
+  const musicTrack = useClipper((s) => s.musicTrack);
+  const setMusicTrack = useClipper((s) => s.setMusicTrack);
+  const musicVolume = useClipper((s) => s.musicVolume);
+  const setMusicVolume = useClipper((s) => s.setMusicVolume);
   const [running, setRunning] = useState(false);
 
   const enabledClips = clips.filter((c) => c.enabled);
@@ -431,35 +440,68 @@ export function ExportPanel() {
       const inputs: string[] = [];
       for (const n of segNames) inputs.push("-i", n);
 
+      // optional background music — add as an extra input and mix under clip audio
+      const musicUrl = useClipper.getState().musicTrack;
+      const musicVol = useClipper.getState().musicVolume;
+      const musicMuted = useClipper.getState().musicMuted;
+      let musicInputIdx = -1;
+      let musicName: string | null = null;
+      if (musicUrl && !musicMuted && musicVol > 0) {
+        try {
+          const musicBlob = await (await fetch(musicUrl)).blob();
+          musicName = `music.${musicUrl.includes(".mp3") ? "mp3" : "wav"}`;
+          await ffmpeg.writeFile(musicName, new Uint8Array(await musicBlob.arrayBuffer()));
+          inputs.push("-i", musicName);
+          musicInputIdx = segNames.length;
+        } catch {
+          // music load is best-effort
+        }
+      }
+
       if (xf > 0 && segNames.length > 1) {
-        // build xfade chain: [0:v][1:v]xfade=duration=D:offset=T1[v01]; [v01][2]xfade...
+        // build xfade chain: [0:v][1:v]xfade=transition=T:duration=D:offset=T1[v01]; [v01][2]xfade...
+        const transition = useClipper.getState().transitionType;
         const filterParts: string[] = [];
         const totalSegs = segNames.length;
         // For 2 segments: one xfade, output label = "vout"
         // For 3+: first xfade -> [v0], subsequent -> [v1]...[vout]
         const firstLabel = totalSegs === 2 ? "vout" : "v0";
         filterParts.push(
-          `[0:v][1:v]xfade=transition=fade:duration=${xf}:offset=${(segDurations[0] - xf).toFixed(3)}[${firstLabel}]`
+          `[0:v][1:v]xfade=transition=${transition}:duration=${xf}:offset=${(segDurations[0] - xf).toFixed(3)}[${firstLabel}]`
         );
         let accumDur = segDurations[0] + segDurations[1] - xf;
         for (let i = 2; i < totalSegs; i++) {
           const offset = (accumDur - xf).toFixed(3);
           const label = i === totalSegs - 1 ? "vout" : `v${i - 1}`;
-          filterParts.push(`[v${i - 2}][${i}:v]xfade=transition=fade:duration=${xf}:offset=${offset}[${label}]`);
+          filterParts.push(`[v${i - 2}][${i}:v]xfade=transition=${transition}:duration=${xf}:offset=${offset}[${label}]`);
           accumDur += segDurations[i] - xf;
         }
         // audio crossfade (acrossfade) chain
         if (totalSegs === 2) {
-          filterParts.push(`[0:a][1:a]acrossfade=d=${xf}[aout]`);
+          filterParts.push(`[0:a][1:a]acrossfade=d=${xf}[axfade]`);
         } else {
           filterParts.push(`[0:a][1:a]acrossfade=d=${xf}[a0]`);
           for (let i = 2; i < totalSegs; i++) {
-            const label = i === totalSegs - 1 ? "aout" : `a${i - 1}`;
+            const label = i === totalSegs - 1 ? "axfade" : `a${i - 1}`;
             filterParts.push(`[a${i - 2}][${i}:a]acrossfade=d=${xf}[${label}]`);
           }
         }
+        // optional background music mix
+        let finalA = "[axfade]";
+        if (musicInputIdx >= 0) {
+          // trim music to total output duration, loop if shorter, set volume, mix
+          const totalDur = accumDur.toFixed(3);
+          filterParts.push(
+            `[${musicInputIdx}:a]aloop=loop=-1:size=2e9,atrim=duration=${totalDur},volume=${musicVol}[music]`,
+            `[axfade][music]amix=inputs=2:duration=first:dropout_transition=0[aout]`
+          );
+          finalA = "[aout]";
+        } else {
+          // rename axfade -> aout for the map
+          filterParts.push(`[axfade]anull[aout]`);
+          finalA = "[aout]";
+        }
         const finalV = "[vout]";
-        const finalA = "[aout]";
         const mapArgs = ["-map", finalV, "-map", finalA];
         const cArgs = format === "mp4"
           ? ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k"]
@@ -476,11 +518,30 @@ export function ExportPanel() {
         // no crossfade — simple concat demuxer
         const concatList = segNames.map((n) => `file '${n}'`).join("\n");
         await ffmpeg.writeFile("concat.txt", new TextEncoder().encode(concatList));
-        await ffmpeg.exec([
-          "-f", "concat", "-safe", "0", "-i", "concat.txt",
-          "-c", "copy",
-          outName,
-        ]);
+        if (musicInputIdx >= 0 && musicName) {
+          // concat + music mix
+          const totalDur = segDurations.reduce((a, b) => a + b, 0).toFixed(3);
+          await ffmpeg.exec([
+            "-f", "concat", "-safe", "0", "-i", "concat.txt",
+            "-i", musicName,
+            "-filter_complex",
+            `[1:a]aloop=loop=-1:size=2e9,atrim=duration=${totalDur},volume=${musicVol}[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=0[aout]`,
+            "-map", "0:v", "-map", "[aout]",
+            ...cArgs,
+            outName,
+          ]);
+        } else {
+          await ffmpeg.exec([
+            "-f", "concat", "-safe", "0", "-i", "concat.txt",
+            "-c", "copy",
+            outName,
+          ]);
+        }
+      }
+
+      // cleanup music file if any
+      if (musicName) {
+        try { await ffmpeg.deleteFile(musicName); } catch {}
       }
 
       const data = await ffmpeg.readFile(outName);
@@ -617,23 +678,122 @@ export function ExportPanel() {
             <Switch checked={stitchMode} onCheckedChange={setStitchMode} />
           </div>
           {stitchMode && (
-            <div className="space-y-1 animate-fade-in">
+            <div className="space-y-2 animate-fade-in">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] text-muted-foreground">Crossfade duration</Label>
+                  <span className="font-mono text-[11px] text-foreground/80">{crossfadeSec.toFixed(1)}s</span>
+                </div>
+                <Slider
+                  value={[crossfadeSec]}
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  onValueChange={([v]) => setCrossfadeSec(v)}
+                />
+                {crossfadeSec === 0 && (
+                  <p className="text-[10px] text-muted-foreground/70">
+                    No transition — clips are concatenated back-to-back.
+                  </p>
+                )}
+              </div>
+              {crossfadeSec > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Transition type</Label>
+                  <div className="flex flex-wrap gap-1">
+                    {([
+                      ["fade", "Fade"],
+                      ["dissolve", "Dissolve"],
+                      ["wipeleft", "Wipe L"],
+                      ["wiperight", "Wipe R"],
+                      ["slideup", "Slide"],
+                      ["circleopen", "Circle"],
+                      ["radial", "Radial"],
+                    ] as const).map(([val, label]) => (
+                      <button
+                        key={val}
+                        onClick={() => setTransitionType(val)}
+                        className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
+                          transitionType === val
+                            ? "bg-primary/20 text-primary"
+                            : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Background music */}
+      {format !== "gif" && format !== "srt" && source?.kind === "file" && (
+        <div className="space-y-2 rounded-lg border border-border/50 bg-card/40 p-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Music className={`h-4 w-4 ${musicTrack ? "text-primary" : "text-muted-foreground"}`} />
+              <div>
+                <Label className="text-xs font-medium">Background music</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  {musicTrack ? "Music track loaded" : "Mix an audio track under your clips"}
+                </p>
+              </div>
+            </div>
+            {musicTrack && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => setMusicTrack(null)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove
+              </Button>
+            )}
+          </div>
+          {!musicTrack ? (
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 p-2.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground">
+              <UploadCloud className="h-4 w-4" />
+              Drop audio file (MP3 / WAV)
+              <input
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setMusicTrack(URL.createObjectURL(f));
+                }}
+              />
+            </label>
+          ) : (
+            <div className="space-y-1.5 animate-fade-in">
               <div className="flex items-center justify-between">
-                <Label className="text-[11px] text-muted-foreground">Crossfade duration</Label>
-                <span className="font-mono text-[11px] text-foreground/80">{crossfadeSec.toFixed(1)}s</span>
+                <Label className="text-[11px] text-muted-foreground">Music volume</Label>
+                <span className="font-mono text-[11px] text-foreground/80">{Math.round(musicVolume * 100)}%</span>
               </div>
               <Slider
-                value={[crossfadeSec]}
+                value={[musicVolume * 100]}
                 min={0}
-                max={2}
-                step={0.1}
-                onValueChange={([v]) => setCrossfadeSec(v)}
+                max={100}
+                step={5}
+                onValueChange={([v]) => setMusicVolume(v / 100)}
               />
-              {crossfadeSec === 0 && (
-                <p className="text-[10px] text-muted-foreground/70">
-                  No transition — clips are concatenated back-to-back.
-                </p>
-              )}
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 p-1.5 text-[10px] text-muted-foreground hover:border-primary/40 hover:text-foreground">
+                Replace track
+                <input
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setMusicTrack(URL.createObjectURL(f));
+                  }}
+                />
+              </label>
             </div>
           )}
         </div>
