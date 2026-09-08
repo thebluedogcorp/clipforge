@@ -996,3 +996,39 @@ applying the watermark in the stitch/compilation export.
 4. **Watermark fade in/out** — animate the watermark opacity over time.
 5. **Probe video width in stitch mode** — use the actual video width for
    watermark scaling instead of assuming 1280px.
+
+---
+
+## Phase 12 — GitHub Repo + CI/CD + exe Release
+
+### What was done
+1. Created a **public** GitHub repo: https://github.com/thebluedogcorp/clipforge
+2. Added a **proprietary LICENSE** (code is legally guarded, binary is free to use)
+3. Created a **SaaS-style README** with badges, feature list, download table
+4. Created a **launcher.ts** (Bun-compiled desktop launcher that starts the
+   Next.js standalone server + opens the browser)
+5. Created a **GitHub Actions workflow** (`.github/workflows/release.yml`)
+   that:
+   - Triggers on tag push (`v*`)
+   - Builds for **Windows, macOS, and Linux** via a 3-OS matrix
+   - Compiles the launcher with `bun build --compile --target=...`
+   - Packages each platform into an archive (zip/tar.gz)
+   - Creates a GitHub Release with all 3 archives as downloadable assets
+6. Fixed two build issues:
+   - Removed `--frozen-lockfile` (no lockfile in repo)
+   - Removed Unix-only `cp -r` from the build script (cross-platform)
+7. Tagged **v1.0.0** and the workflow built + published all 3 releases:
+   - `clipforge-windows-x64.zip` (42.2 MB)
+   - `clipforge-macos-x64.tar.gz` (39.3 MB)
+   - `clipforge-linux-x64.tar.gz` (55.1 MB)
+8. Added topic tags for discoverability (saas, video-editor, ai-captions, etc.)
+
+### Repo settings
+- **Visibility**: Public (anyone can download releases + read README)
+- **Code protection**: Proprietary LICENSE (legal lock — no reverse engineering,
+  no derivative works, no source redistribution)
+- **Releases**: Public, free to download and use
+
+### Security note
+The GitHub PAT used to create the repo was shared in plaintext and should be
+**revoked immediately** at https://github.com/settings/tokens
