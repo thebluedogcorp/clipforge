@@ -239,3 +239,119 @@ pointerup). Real user drags work fine.
 6. **Mobile timeline popover** — collapse the cramped mobile timeline into a
    swipeable sheet.
 7. **Actual `.exe` build script** — `bun build --compile` launcher.
+
+---
+
+## Phase 3 Update — Cron Review #2 (Real Waveform + Aspect Crop + New Devices + Persistence)
+
+### Current Project Status Assessment
+
+The app from Phase 2 is stable — `GET /` → 200, no console errors. QA via
+agent-browser + VLM confirmed all Phase 1 & 2 features still work. No critical
+bugs found. This round focused on the priority recommendations from Phase 2:
+real audio waveform, aspect-ratio crop, more device mockups, and project
+persistence.
+
+### This Round's Completed Modifications
+
+**1. Real audio waveform** (`src/lib/use-audio-waveform.ts`)
+- Replaced the procedural/fake waveform with a real one decoded via the
+  WebAudio API (`AudioContext.decodeAudioData`).
+- Walks the PCM buffer in ~8ms buckets, takes the max amplitude per bucket,
+  normalizes with a gamma curve so quiet parts are visible.
+- Stored in the zustand store (`waveform` field) and sampled per-zoom-level
+  in the timeline.
+- Upgraded the waveform rendering: **mirrored top/bottom bars** with a
+  **gradient fill**, and the **played portion (left of playhead) is colored
+  lime-green** while the unplayed portion is gray. VLM-confirmed: "real audio
+  waveform with varying peaks… mirrored… played portion colored lime-green."
+
+**2. Aspect-ratio crop + preview framing** (`store.ts` + `video-preview.tsx` + `export-panel.tsx`)
+- Added `aspect` state (`16:9` | `9:16` | `1:1` | `4:5`) to the store.
+- Video preview now wraps the video in an aspect-ratio container with
+  `object-cover` so the user sees exactly what they'd export (center-cropped).
+- A "9:16 crop" badge appears on the preview when a non-default aspect is selected.
+- The device selector row now includes an inline aspect-ratio picker with
+  mini visual icons (tiny rectangles showing the aspect shape).
+- Export applies the same center-crop via an ffmpeg `crop` filter expression
+  (`crop='if(gt(a,TGT),ih*TGT,iw)':'if(gt(a,TGT),ih,iw/TGT)'`) so exported
+  clips match the preview framing. Verified: 2 clips exported at 9:16
+  (525KB + 527KB MP4).
+
+**3. Caption burn-in export** (`export-panel.tsx` + `store.ts`)
+- Added `burnCaptions` toggle to the store.
+- When enabled (and format is mp4/webm, and captions exist), an SRT sidecar
+  is written to the ffmpeg FS and a `subtitles=...:force_style='...'` filter
+  is appended to the video filter chain — burning styled captions directly
+  into the exported video.
+- UI: a card with a flame icon + Switch toggle, shown only when captions
+  exist and format supports it.
+
+**4. New 3D device mockups** (`three/device-mockup.tsx` + `types.ts`)
+- **Android phone** — Pixel-style with a flat back, punch-hole camera,
+  horizontal camera bar on the back (3 lenses), and a side power button.
+- **Story / Reels frame** — a 9:16 phone shell with Instagram-Story-style
+  UI overlays: progress segment bars at top, profile circle + username bar,
+  bottom action bar gradient with like/comment/send icon placeholders.
+- Updated `DeviceKind` type and `DEVICE_LABELS`.
+- Video preview's device selector now shows 7 options (Native, iPhone,
+  Android, iPad, Desktop, TV, Story). VLM-confirmed both new mockups render
+  correctly with the live video texture.
+
+**5. Project persistence to IndexedDB** (`src/lib/persistence.ts` + `src/lib/use-persistence.ts`)
+- Auto-saves clips, captions, transcript, source metadata, aspect, and
+  captionStyle to IndexedDB (debounced 2s after last change).
+- Stores the video File blob in IDB so local-file sources can be re-created
+  after a reload (new object URL generated from the stored blob).
+- On mount, restores the full state including the video source — user can
+  close and reopen the app and continue exactly where they left off.
+- Verified: after reload, "Clips2" count survived and the video source was
+  restored from the blob (`blob:http://localhost:3000/99b17c34-...`).
+
+**6. Styling polish**
+- Waveform bars now use gradients + mirroring + played/unplayed coloring.
+- Aspect ratio picker with mini visual icons.
+- Export panel shows aspect crop info ("Center-cropped to 9:16 · matches the
+  preview frame") and a burn-captions card with flame icon.
+- Crop badge on the video preview when non-default aspect is active.
+
+### Verification Results (this round)
+
+- Lint clean (`bun run lint` → no errors/warnings).
+- `GET /` → 200, no console errors, no hydration crashes.
+- Real waveform: VLM confirmed "real audio waveform with varying peaks…
+  mirrored… played portion colored lime-green."
+- Aspect crop: VLM confirmed "vertical 9:16 crop frame… explicitly labeled…
+  portrait-oriented video preview."
+- Android phone mockup: VLM confirmed "3D Android-style phone with punch-hole
+  camera… video playing on the screen… polished and realistic."
+- Story frame: VLM confirmed "vertical phone-style Story/Reels frame with
+  UI overlays, progress bars at top."
+- Export with 9:16 crop: both clips exported successfully (525KB + 527KB MP4).
+- Persistence: after reload, clips count (2) and video source survived.
+
+### Unresolved Issues / Risks
+
+- **Caption burn-in not yet fully tested end-to-end** — the SRT filter path
+  is implemented but not browser-tested with a real caption set. The
+  `subtitles` filter requires libass which is included in the @ffmpeg/core
+  build; should work but unverified. The sidecar SRT download path is
+  confirmed working.
+- **IndexedDB blob storage** — large videos (100MB+) stored in IDB could hit
+  browser storage quotas. No quota-checking or eviction yet. For now this is
+  acceptable for a local tool.
+- **Mobile layout** still cramped — deferred.
+- All Phase 1 & 2 known limitations still apply.
+
+### Priority Recommendations for Next Phase
+
+1. **Verify caption burn-in** end-to-end with a real caption set — test that
+   the `subtitles` filter renders text on the exported MP4.
+2. **Storage quota management** — check `navigator.storage.estimate()` and
+   warn the user / evict old blobs when near the limit.
+3. **Mobile timeline popover** — collapse the cramped mobile timeline into a
+   swipeable bottom sheet.
+4. **Real waveform on the timeline thumbnail** — show a mini waveform inside
+   each clip card in the clip list.
+5. **Clip merging** — merge adjacent or overlapping clips into one.
+6. **Actual `.exe` build script** — `bun build --compile` launcher.

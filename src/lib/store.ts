@@ -64,6 +64,18 @@ interface ClipperState {
   captionStyle: "minimal" | "bold" | "karaoke" | "boxed";
   setCaptionStyle: (s: "minimal" | "bold" | "karaoke" | "boxed") => void;
 
+  // audio waveform (real, decoded via WebAudio)
+  waveform: { peaks: number[]; duration: number } | null;
+  setWaveform: (w: { peaks: number[]; duration: number } | null) => void;
+
+  // aspect ratio crop for preview + export
+  aspect: "16:9" | "9:16" | "1:1" | "4:5";
+  setAspect: (a: "16:9" | "9:16" | "1:1" | "4:5") => void;
+
+  // burn captions into exported video (vs. sidecar SRT)
+  burnCaptions: boolean;
+  setBurnCaptions: (v: boolean) => void;
+
   // device preview
   device: DeviceKind;
   setDevice: (d: DeviceKind) => void;
@@ -226,6 +238,15 @@ export const useClipper = create<ClipperState>((set, get) => ({
   toggleCaptions: () => set((s) => ({ showCaptions: !s.showCaptions })),
   captionStyle: "bold",
   setCaptionStyle: (s) => set({ captionStyle: s }),
+
+  waveform: null,
+  setWaveform: (w) => set({ waveform: w }),
+
+  aspect: "16:9",
+  setAspect: (a) => set({ aspect: a }),
+
+  burnCaptions: false,
+  setBurnCaptions: (v) => set({ burnCaptions: v }),
 
   device: "native",
   setDevice: (d) => set({ device: d }),

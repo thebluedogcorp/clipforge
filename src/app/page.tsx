@@ -22,11 +22,15 @@ import { SlidersHorizontal, PanelLeft } from "lucide-react";
 import { useClipper } from "@/lib/store";
 import { useKeyboardShortcuts } from "@/lib/use-keyboard-shortcuts";
 import { useThumbnailGenerator } from "@/lib/use-thumbnail-generator";
+import { useAudioWaveform } from "@/lib/use-audio-waveform";
+import { usePersistence } from "@/lib/use-persistence";
 
 export default function Home() {
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   useKeyboardShortcuts();
   useThumbnailGenerator();
+  useAudioWaveform();
+  usePersistence();
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">

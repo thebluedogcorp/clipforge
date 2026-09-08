@@ -17,6 +17,7 @@ import {
   Square,
   Subtitles,
   RotateCw,
+  Crop,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -48,9 +49,18 @@ const DeviceMockup = dynamic(
 const DEVICES: { kind: DeviceKind; icon: typeof Monitor; label: string }[] = [
   { kind: "native", icon: Square, label: "Native" },
   { kind: "iphone", icon: Smartphone, label: "iPhone" },
+  { kind: "android", icon: Smartphone, label: "Android" },
   { kind: "ipad", icon: Tablet, label: "iPad" },
   { kind: "desktop", icon: Monitor, label: "Desktop" },
   { kind: "tv", icon: Tv, label: "TV" },
+  { kind: "story", icon: Square, label: "Story" },
+];
+
+const ASPECTS: { value: "16:9" | "9:16" | "1:1" | "4:5"; label: string; ratio: number }[] = [
+  { value: "16:9", label: "16:9", ratio: 16 / 9 },
+  { value: "9:16", label: "9:16", ratio: 9 / 16 },
+  { value: "1:1", label: "1:1", ratio: 1 },
+  { value: "4:5", label: "4:5", ratio: 4 / 5 },
 ];
 
 export function VideoPreview() {
@@ -63,6 +73,8 @@ export function VideoPreview() {
   const captionStyle = useClipper((s) => s.captionStyle);
   const rotating = useClipper((s) => s.rotating);
   const toggleRotating = useClipper((s) => s.toggleRotating);
+  const aspect = useClipper((s) => s.aspect);
+  const setAspect = useClipper((s) => s.setAspect);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -197,15 +209,47 @@ export function VideoPreview() {
             </div>
           </div>
         ) : (
-          <video
-            ref={videoRef}
-            src={source.url}
-            className={`z-10 max-h-full max-w-full rounded-xl border border-border/60 bg-black shadow-2xl ${
-              device === "native" ? "" : "pointer-events-none absolute h-px w-px opacity-0"
-            }`}
-            playsInline
-            crossOrigin="anonymous"
-          />
+          <>
+            {/* single video element — visible in native mode (aspect-cropped),
+                hidden in device mode (feeds the 3D VideoTexture) */}
+            <div
+              className={`relative z-10 ${device === "native" ? "flex h-full w-full items-center justify-center" : "pointer-events-none absolute h-px w-px opacity-0"}`}
+            >
+              <div
+                className="relative overflow-hidden rounded-xl border border-border/60 bg-black shadow-2xl"
+                style={{
+                  aspectRatio:
+                    aspect === "16:9" ? "16 / 9"
+                    : aspect === "9:16" ? "9 / 16"
+                    : aspect === "1:1" ? "1 / 1"
+                    : "4 / 5",
+                  maxHeight: "100%",
+                  maxWidth: "100%",
+                  height: aspect === "9:16" || aspect === "4:5" ? "100%" : "auto",
+                  width: aspect === "9:16" || aspect === "4:5" ? "auto" : "100%",
+                }}
+              >
+                <video
+                  ref={videoRef}
+                  src={source.url}
+                  className="h-full w-full object-cover"
+                  style={{ objectPosition: "center" }}
+                  playsInline
+                  crossOrigin="anonymous"
+                />
+                {/* caption overlay (native mode only — 3D handles its own) */}
+                {device === "native" && showCaptions && activeCaption && (
+                  <CaptionOverlay text={activeCaption.text} style={captionStyle} />
+                )}
+                {/* aspect badge */}
+                {device === "native" && aspect !== "16:9" && (
+                  <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-0.5 font-mono text-[10px] font-semibold text-primary backdrop-blur">
+                    {aspect} crop
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
         )}
 
         {/* 3D device mockup */}
@@ -214,16 +258,48 @@ export function VideoPreview() {
             <DeviceMockup videoRef={videoRef} />
           </div>
         )}
-
-        {/* Caption overlay (native mode only — 3D handles its own) */}
-        {device === "native" && showCaptions && activeCaption && (
-          <CaptionOverlay text={activeCaption.text} style={captionStyle} />
-        )}
       </div>
 
-      {/* Device selector */}
-      <div className="flex items-center justify-center gap-1 border-t border-border/40 px-3 py-2">
+      {/* Device selector + aspect ratio */}
+      <div className="flex flex-wrap items-center justify-center gap-1 border-t border-border/40 px-3 py-2">
         <TooltipProvider delayDuration={200}>
+          {/* aspect ratio group — only relevant for native */}
+          {device === "native" && !isYouTube && (
+            <>
+              <div className="mr-1 flex items-center gap-0.5 rounded-lg border border-border/40 bg-card/40 p-0.5">
+                {ASPECTS.map((a) => {
+                  const active = aspect === a.value;
+                  return (
+                    <Tooltip key={a.value}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => setAspect(a.value)}
+                          className={`flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-mono font-medium transition-colors ${
+                            active
+                              ? "bg-primary/20 text-primary"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <span
+                            className="block border border-current"
+                            style={{
+                              width: a.ratio >= 1 ? "10px" : `${10 * a.ratio}px`,
+                              height: a.ratio >= 1 ? `${10 / a.ratio}px` : "10px",
+                            }}
+                          />
+                          {a.label}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Crop to {a.label}
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+              <Separator orientation="vertical" className="mx-1 h-5" />
+            </>
+          )}
           {DEVICES.map((d) => {
             const Icon = d.icon;
             const active = device === d.kind;

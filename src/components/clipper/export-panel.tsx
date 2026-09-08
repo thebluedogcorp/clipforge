@@ -12,10 +12,15 @@ import {
   AlertCircle,
   Package,
   Film,
+  Crop,
+  Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -52,6 +57,10 @@ export function ExportPanel() {
   const updateJob = useClipper((s) => s.updateExportJob);
   const clearJobs = useClipper((s) => s.clearExportJobs);
   const setBusy = useClipper((s) => s.setBusy);
+  const aspect = useClipper((s) => s.aspect);
+  const setAspect = useClipper((s) => s.setAspect);
+  const burnCaptions = useClipper((s) => s.burnCaptions);
+  const setBurnCaptions = useClipper((s) => s.setBurnCaptions);
   const [running, setRunning] = useState(false);
 
   const enabledClips = clips.filter((c) => c.enabled);
@@ -90,6 +99,10 @@ export function ExportPanel() {
       return;
     }
 
+    const aspect = useClipper.getState().aspect;
+    const burnCaptions = useClipper.getState().burnCaptions;
+    const captions = useClipper.getState().captions;
+
     const job: ExportJob = {
       id: uid(),
       clipId,
@@ -109,6 +122,20 @@ export function ExportPanel() {
 
       await ffmpeg.writeFile(inputName, await fetchFile(source.url));
 
+      // if burning captions, write an .srt sidecar and build the filter chain
+      let srtName: string | null = null;
+      let captionFilter = "";
+      if (burnCaptions && captions.length > 0 && (format === "mp4" || format === "webm")) {
+        srtName = `subs_${clipId}.srt`;
+        const clipCaps = captions
+          .filter((c) => c.start >= clip.start - 0.05 && c.end <= clip.end + 0.05)
+          .map((c) => ({ ...c, start: c.start - clip.start, end: c.end - clip.start }));
+        const srt = buildSrt(clipCaps);
+        await ffmpeg.writeFile(srtName, new TextEncoder().encode(srt));
+        // subtitles filter with styled fontsdir; force_style for bold look
+        captionFilter = `subtitles=${srtName}:force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2'`;
+      }
+
       const onProg = ({ progress: p }: { progress: number }) => {
         const pr = Math.max(0, Math.min(1, p));
         updateJob(job.id, { progress: pr });
@@ -117,12 +144,41 @@ export function ExportPanel() {
 
       const args: string[] = ["-i", inputName, "-ss", String(clip.start), "-to", String(clip.end)];
 
+      // build the video filter chain: crop to aspect + optional caption burn-in
+      const vfParts: string[] = [];
+      if (aspect !== "16:9") {
+        // center-crop to the target aspect ratio using ffmpeg expressions.
+        // a = source aspect (iw/ih). TGT = target aspect (aw/ah).
+        // if source is wider than target → crop the sides (w = ih*TGT)
+        // if source is taller than target → crop top/bottom (h = iw/TGT)
+        const targets: Record<string, number> = {
+          "9:16": 9 / 16,
+          "1:1": 1,
+          "4:5": 4 / 5,
+        };
+        const tgt = targets[aspect];
+        vfParts.push(
+          `crop='if(gt(a\\,${tgt})\\,ih*${tgt}\\,iw)':'if(gt(a\\,${tgt})\\,ih\\,iw/${tgt})'`
+        );
+      }
+      if (captionFilter) vfParts.push(captionFilter);
+      if (vfParts.length > 0) {
+        // for gif we already set -vf below; append aspect crop there instead
+        if (format !== "gif") {
+          args.push("-vf", vfParts.join(","));
+        }
+      }
+
       if (format === "mp4") {
         args.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k");
       } else if (format === "webm") {
         args.push("-c:v", "libvpx", "-b:v", "1M", "-c:a", "libvorbis");
       } else if (format === "gif") {
-        args.push("-vf", "fps=12,scale=480:-1:flags=lanczos", "-loop", "0");
+        // gif: merge aspect crop with the standard gif filter
+        const gifVf = vfParts.length > 0
+          ? `${vfParts.join(",")},fps=12,scale=480:-1:flags=lanczos`
+          : "fps=12,scale=480:-1:flags=lanczos";
+        args.push("-vf", gifVf, "-loop", "0");
       } else if (format === "mp3") {
         args.push("-vn", "-c:a", "libmp3lame", "-b:a", "128k");
       }
@@ -145,6 +201,7 @@ export function ExportPanel() {
       try {
         await ffmpeg.deleteFile(inputName);
         await ffmpeg.deleteFile(outName);
+        if (srtName) await ffmpeg.deleteFile(srtName);
       } catch {}
       toast.success(`${clip.name} exported`);
     } catch (e) {
@@ -217,6 +274,52 @@ export function ExportPanel() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Aspect ratio crop (video formats only) */}
+      {format !== "mp3" && format !== "srt" && (
+        <div className="space-y-1.5">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Crop className="h-3.5 w-3.5" />
+            Aspect ratio
+          </label>
+          <div className="flex gap-1">
+            {(["16:9", "9:16", "1:1", "4:5"] as const).map((a) => (
+              <button
+                key={a}
+                onClick={() => setAspect(a)}
+                className={`flex-1 rounded-lg border px-2 py-1.5 font-mono text-[11px] font-medium transition-colors ${
+                  aspect === a
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-border/50 bg-card/40 text-muted-foreground hover:border-border hover:text-foreground"
+                }`}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+          {aspect !== "16:9" && (
+            <p className="text-[10px] text-muted-foreground/70">
+              Center-cropped to {aspect} · matches the preview frame
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Burn captions into video */}
+      {(format === "mp4" || format === "webm") && captions.length > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/40 p-2.5">
+          <div className="flex items-center gap-2">
+            <Flame className={`h-4 w-4 ${burnCaptions ? "text-primary" : "text-muted-foreground"}`} />
+            <div>
+              <Label className="text-xs font-medium">Burn captions</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Embed captions directly into the video
+              </p>
+            </div>
+          </div>
+          <Switch checked={burnCaptions} onCheckedChange={setBurnCaptions} />
+        </div>
+      )}
 
       <Button onClick={exportAll} disabled={!canExport && format !== "srt"} className="w-full gap-2">
         {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

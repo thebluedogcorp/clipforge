@@ -49,6 +49,7 @@ export function Timeline() {
   const outMark = useClipper((s) => s.outMark);
   const setInMark = useClipper((s) => s.setInMark);
   const setOutMark = useClipper((s) => s.setOutMark);
+  const waveformData = useClipper((s) => s.waveform);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -197,27 +198,32 @@ export function Timeline() {
     return arr;
   }, [duration, pxPerSec]);
 
-  // decorative waveform
+  // real audio waveform (decoded via WebAudio) — sample peaks for the current
+  // zoom level. Falls back to a subtle flat line if not yet decoded.
   const waveform = useMemo(() => {
     if (!duration) return [];
-    const count = Math.ceil(totalWidth / 4);
-    const bars: number[] = [];
-    let seed = 1337;
-    const rand = () => {
-      seed = (seed * 1664525 + 1013904223) % 4294967296;
-      return seed / 4294967296;
-    };
-    for (let i = 0; i < count; i++) {
-      const t = (i / count) * duration;
-      // envelope: a few "speech bursts"
-      const env =
-        0.35 +
-        0.5 * Math.abs(Math.sin(t * 0.7) * Math.sin(t * 0.13 + 1)) +
-        0.15 * rand();
-      bars.push(clamp(env, 0.08, 1));
+    const count = Math.ceil(totalWidth / 3); // ~3px per bar
+    if (!waveformData || waveformData.peaks.length === 0) {
+      // not decoded yet — show faint flat bars as a placeholder
+      return new Array(count).fill(0.12);
     }
-    return bars;
-  }, [duration, totalWidth]);
+    const peaks = waveformData.peaks;
+    const srcDur = waveformData.duration || duration;
+    const out: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const tStart = (i / count) * duration;
+      const tEnd = ((i + 1) / count) * duration;
+      // map timeline time → source-peak index
+      const pStart = Math.floor((tStart / srcDur) * peaks.length);
+      const pEnd = Math.max(pStart + 1, Math.floor((tEnd / srcDur) * peaks.length));
+      let peak = 0;
+      for (let j = pStart; j < pEnd && j < peaks.length; j++) {
+        if (peaks[j] > peak) peak = peaks[j];
+      }
+      out.push(Math.max(0.06, peak));
+    }
+    return out;
+  }, [duration, totalWidth, waveformData]);
 
   const playheadX = currentTime * pxPerSec;
 
@@ -379,15 +385,40 @@ export function Timeline() {
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
           >
-            {/* waveform bars */}
-            <div className="pointer-events-none absolute inset-0 flex items-center gap-px overflow-hidden px-px">
-              {waveform.map((h, i) => (
-                <div
-                  key={i}
-                  className="w-[3px] shrink-0 rounded-full bg-foreground/15"
-                  style={{ height: `${h * 70}%` }}
-                />
-              ))}
+            {/* waveform bars — mirrored top/bottom with a subtle gradient */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-px overflow-hidden px-px">
+              {waveform.map((h, i) => {
+                // color the portion left of the playhead with the primary accent
+                const barX = i * 4; // approx x of this bar
+                const played = barX <= playheadX;
+                return (
+                  <div
+                    key={i}
+                    className="relative flex h-full w-[3px] shrink-0 items-center"
+                  >
+                    {/* top half */}
+                    <div
+                      className="absolute bottom-1/2 w-full rounded-t-sm"
+                      style={{
+                        height: `${h * 50}%`,
+                        background: played
+                          ? "linear-gradient(to top, var(--primary), oklch(0.82 0.19 132 / 0.5))"
+                          : "oklch(1 0 0 / 0.16)",
+                      }}
+                    />
+                    {/* bottom half (mirrored) */}
+                    <div
+                      className="absolute top-1/2 w-full rounded-b-sm"
+                      style={{
+                        height: `${h * 50}%`,
+                        background: played
+                          ? "linear-gradient(to bottom, var(--primary), oklch(0.82 0.19 132 / 0.3))"
+                          : "oklch(1 0 0 / 0.1)",
+                      }}
+                    />
+                  </div>
+                );
+              })}
             </div>
 
             {/* center line */}

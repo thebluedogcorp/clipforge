@@ -86,9 +86,11 @@ function Device({ device, videoRef }: { device: DeviceKind; videoRef: Props["vid
   const texture = useVideoTexture(videoRef);
 
   if (device === "iphone") return <Phone texture={texture} />;
+  if (device === "android") return <AndroidPhone texture={texture} />;
   if (device === "ipad") return <Tablet texture={texture} />;
   if (device === "desktop") return <Monitor texture={texture} />;
   if (device === "tv") return <Tv texture={texture} />;
+  if (device === "story") return <StoryFrame texture={texture} />;
   return null;
 }
 
@@ -267,4 +269,108 @@ function TextureKeepAlive({ videoRef }: { videoRef: Props["videoRef"] }) {
     }
   });
   return null;
+}
+
+/* ---------- Android Phone (Pixel-style) ---------- */
+function AndroidPhone({ texture }: { texture: THREE.VideoTexture | null }) {
+  return (
+    <group>
+      {/* body — flat back, rounded corners, camera bar */}
+      <RoundedBox args={[0.76, 1.58, 0.08]} radius={0.06} smoothness={6} castShadow>
+        {bodyMaterial("#1a1a1f", 0.7, 0.35)}
+      </RoundedBox>
+      {/* screen */}
+      <mesh position={[0, 0, 0.042]}>
+        <planeGeometry args={[0.68, 1.48]} />
+        {screenMaterial(texture)}
+      </mesh>
+      {/* punch-hole camera */}
+      <mesh position={[0, 0.62, 0.045]}>
+        <circleGeometry args={[0.022, 20]} />
+        <meshBasicMaterial color="#000" />
+      </mesh>
+      {/* camera bar on the back (visible when rotating) */}
+      <group position={[0, 0.45, -0.045]}>
+        <RoundedBox args={[0.5, 0.12, 0.02]} radius={0.04} smoothness={4}>
+          {bodyMaterial("#2a2a30", 0.8, 0.25)}
+        </RoundedBox>
+        <mesh position={[-0.12, 0, -0.012]}>
+          <circleGeometry args={[0.035, 24]} />
+          <meshStandardMaterial color="#000" metalness={0.9} roughness={0.15} />
+        </mesh>
+        <mesh position={[0, 0, -0.012]}>
+          <circleGeometry args={[0.035, 24]} />
+          <meshStandardMaterial color="#000" metalness={0.9} roughness={0.15} />
+        </mesh>
+        <mesh position={[0.12, 0, -0.012]}>
+          <circleGeometry args={[0.035, 24]} />
+          <meshStandardMaterial color="#000" metalness={0.9} roughness={0.15} />
+        </mesh>
+      </group>
+      {/* power button */}
+      <mesh position={[0.385, 0.3, 0]} castShadow>
+        <boxGeometry args={[0.015, 0.18, 0.04]} />
+        {bodyMaterial("#33333a", 1, 0.2)}
+      </mesh>
+    </group>
+  );
+}
+
+/* ---------- Vertical Story / Reels Frame ---------- */
+function StoryFrame({ texture }: { texture: THREE.VideoTexture | null }) {
+  // a 9:16 phone-style frame with UI overlays (story header + action bar)
+  return (
+    <group>
+      {/* phone shell */}
+      <RoundedBox args={[0.85, 1.75, 0.06]} radius={0.08} smoothness={6} castShadow>
+        {bodyMaterial("#0e0e12", 0.6, 0.4)}
+      </RoundedBox>
+      {/* screen (9:16 aspect) */}
+      <mesh position={[0, 0, 0.034]}>
+        <planeGeometry args={[0.76, 1.65]} />
+        {screenMaterial(texture)}
+      </mesh>
+      {/* story header gradient (top) */}
+      <mesh position={[0, 0.7, 0.035]}>
+        <planeGeometry args={[0.76, 0.35]} />
+        <meshBasicMaterial color="#000" transparent opacity={0.45} />
+      </mesh>
+      {/* profile circle */}
+      <mesh position={[-0.28, 0.72, 0.036]}>
+        <circleGeometry args={[0.035, 24]} />
+        <meshBasicMaterial color="#a3e635" />
+      </mesh>
+      {/* username bar */}
+      <mesh position={[-0.16, 0.72, 0.036]}>
+        <planeGeometry args={[0.18, 0.02]} />
+        <meshBasicMaterial color="#ffffff" />
+      </mesh>
+      {/* progress bars (story segments) */}
+      {[-0.3, -0.16, -0.02, 0.12].map((x, i) => (
+        <mesh key={i} position={[x, 0.82, 0.037]}>
+          <planeGeometry args={[0.115, 0.008]} />
+          <meshBasicMaterial color={i === 0 ? "#a3e635" : "#ffffff44"} />
+        </mesh>
+      ))}
+      {/* bottom action bar gradient */}
+      <mesh position={[0, -0.72, 0.035]}>
+        <planeGeometry args={[0.76, 0.4]} />
+        <meshBasicMaterial color="#000" transparent opacity={0.5} />
+      </mesh>
+      {/* "send" arrow icon placeholder */}
+      <mesh position={[0.3, -0.72, 0.036]}>
+        <circleGeometry args={[0.03, 16]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.8} />
+      </mesh>
+      {/* like + comment dots */}
+      <mesh position={[-0.28, -0.66, 0.036]}>
+        <circleGeometry args={[0.02, 16]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.7} />
+      </mesh>
+      <mesh position={[-0.2, -0.66, 0.036]}>
+        <circleGeometry args={[0.02, 16]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.7} />
+      </mesh>
+    </group>
+  );
 }

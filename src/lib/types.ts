@@ -1,4 +1,11 @@
-export type DeviceKind = "native" | "iphone" | "ipad" | "desktop" | "tv";
+export type DeviceKind =
+  | "native"
+  | "iphone"
+  | "android"
+  | "ipad"
+  | "desktop"
+  | "tv"
+  | "story";
 
 export type ExportFormat = "mp4" | "webm" | "gif" | "mp3" | "srt";
 
@@ -53,7 +60,9 @@ export const CLIP_COLORS = [
 export const DEVICE_LABELS: Record<DeviceKind, string> = {
   native: "Native Player",
   iphone: "iPhone 15 Pro",
+  android: "Android Pixel",
   ipad: "iPad Pro",
   desktop: "Desktop Browser",
   tv: "Smart TV",
+  story: "Story / Reels",
 };
