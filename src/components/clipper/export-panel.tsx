@@ -102,6 +102,9 @@ export function ExportPanel() {
     const aspect = useClipper.getState().aspect;
     const burnCaptions = useClipper.getState().burnCaptions;
     const captions = useClipper.getState().captions;
+    const captionColor = useClipper.getState().captionColor;
+    const captionSize = useClipper.getState().captionSize;
+    const captionPosition = useClipper.getState().captionPosition;
 
     const job: ExportJob = {
       id: uid(),
@@ -122,7 +125,11 @@ export function ExportPanel() {
 
       await ffmpeg.writeFile(inputName, await fetchFile(source.url));
 
-      // if burning captions, write an .srt sidecar and build the filter chain
+      // if burning captions, write the .srt sidecar + a font file into the
+      // virtual FS, then build a subtitles filter that references them.
+      // ffmpeg.wasm ships with libass but NO fonts, so we must supply one
+      // and point `fontsdir` at it — otherwise the filter silently renders
+      // nothing ("can't find selected font provider").
       let srtName: string | null = null;
       let captionFilter = "";
       if (burnCaptions && captions.length > 0 && (format === "mp4" || format === "webm")) {
@@ -132,8 +139,27 @@ export function ExportPanel() {
           .map((c) => ({ ...c, start: c.start - clip.start, end: c.end - clip.start }));
         const srt = buildSrt(clipCaps);
         await ffmpeg.writeFile(srtName, new TextEncoder().encode(srt));
-        // subtitles filter with styled fontsdir; force_style for bold look
-        captionFilter = `subtitles=${srtName}:force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2'`;
+
+        // write a bold TTF into a /tmp/fonts dir inside the virtual FS
+        try {
+          await ffmpeg.createDir("/tmp/fonts").catch(() => {});
+          const fontBlob = await (await fetch("/fonts/DejaVuSans-Bold.ttf")).arrayBuffer();
+          await ffmpeg.writeFile("/tmp/fonts/DejaVuSans-Bold.ttf", new Uint8Array(fontBlob));
+        } catch {
+          // font load is best-effort
+        }
+
+        // subtitles filter: fontsdir tells libass where to look; force_style
+        // sets the visual look derived from the in-app caption editor.
+        // Convert hex captionColor (#rrggbb) to ASS &HBBGGRR.
+        const hex = captionColor.replace("#", "");
+        const assColor = `&H00${hex.slice(4, 6)}${hex.slice(2, 4)}${hex.slice(0, 2)}`.toUpperCase();
+        // Map the in-app vertical % (10=top, 90=bottom) to ASS MarginV from bottom.
+        // ASS Alignment=2 is bottom-center; MarginV is pixels from bottom.
+        // Approx: bottom margin = (100 - position) / 100 * 720 (assume 720p height)
+        const marginV = Math.round(((100 - captionPosition) / 100) * 720 * 0.4);
+        captionFilter =
+          `subtitles=${srtName}:fontsdir=/tmp/fonts:force_style='FontName=DejaVu Sans,FontSize=${captionSize},PrimaryColour=${assColor},OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,MarginV=${marginV},Alignment=2'`;
       }
 
       const onProg = ({ progress: p }: { progress: number }) => {

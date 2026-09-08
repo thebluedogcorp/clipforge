@@ -28,6 +28,12 @@ interface ClipperState {
   setVolume: (v: number) => void;
   muted: boolean;
   toggleMute: () => void;
+  playbackRate: number;
+  setPlaybackRate: (r: number) => void;
+  loopRegion: { start: number; end: number } | null;
+  setLoopRegion: (r: { start: number; end: number } | null) => void;
+  loopEnabled: boolean;
+  toggleLoop: () => void;
 
   // timeline
   zoom: number; // px per second
@@ -42,6 +48,8 @@ interface ClipperState {
   removeClip: (id: string) => void;
   reorderClips: (from: number, to: number) => void;
   duplicateClip: (id: string) => void;
+  mergeWithNext: (id: string) => void;
+  splitClip: (id: string, atTime: number) => void;
   autoSplit: (count: number, lengthSec: number, strategy: "even" | "sequential") => void;
   clearClips: () => void;
   thumbnails: Record<string, string>; // clipId -> dataURL
@@ -63,6 +71,12 @@ interface ClipperState {
   toggleCaptions: () => void;
   captionStyle: "minimal" | "bold" | "karaoke" | "boxed";
   setCaptionStyle: (s: "minimal" | "bold" | "karaoke" | "boxed") => void;
+  captionColor: string;
+  setCaptionColor: (c: string) => void;
+  captionSize: number;
+  setCaptionSize: (n: number) => void;
+  captionPosition: number; // 0..100, % from top
+  setCaptionPosition: (n: number) => void;
 
   // audio waveform (real, decoded via WebAudio)
   waveform: { peaks: number[]; duration: number } | null;
@@ -113,6 +127,12 @@ export const useClipper = create<ClipperState>((set, get) => ({
   setVolume: (v) => set({ volume: v }),
   muted: false,
   toggleMute: () => set((s) => ({ muted: !s.muted })),
+  playbackRate: 1,
+  setPlaybackRate: (r) => set({ playbackRate: r }),
+  loopRegion: null,
+  setLoopRegion: (r) => set({ loopRegion: r }),
+  loopEnabled: false,
+  toggleLoop: () => set((s) => ({ loopEnabled: !s.loopEnabled })),
 
   zoom: 40,
   setZoom: (z) => set({ zoom: clamp(z, 8, 400) }),
@@ -168,6 +188,44 @@ export const useClipper = create<ClipperState>((set, get) => ({
       const next = [...s.clips];
       next.splice(idx + 1, 0, copy);
       return { clips: next, selectedClipId: copy.id };
+    }),
+  mergeWithNext: (id) =>
+    set((s) => {
+      const idx = s.clips.findIndex((c) => c.id === id);
+      if (idx === -1) return {};
+      const clip = s.clips[idx];
+      const next = s.clips[idx + 1];
+      if (!next) return {};
+      const merged: Clip = {
+        ...clip,
+        end: next.end,
+        name: `${clip.name}+${next.name}`,
+      };
+      const arr = [...s.clips];
+      arr.splice(idx, 2, merged);
+      return { clips: arr, selectedClipId: merged.id };
+    }),
+  splitClip: (id, atTime) =>
+    set((s) => {
+      const idx = s.clips.findIndex((c) => c.id === id);
+      if (idx === -1) return {};
+      const clip = s.clips[idx];
+      if (atTime <= clip.start + 0.3 || atTime >= clip.end - 0.3) return {};
+      const a: Clip = {
+        ...clip,
+        end: atTime,
+        name: `${clip.name} A`,
+      };
+      const b: Clip = {
+        ...clip,
+        id: uid(),
+        start: atTime,
+        name: `${clip.name} B`,
+        color: CLIP_COLORS[(idx + 1) % CLIP_COLORS.length],
+      };
+      const arr = [...s.clips];
+      arr.splice(idx, 1, a, b);
+      return { clips: arr, selectedClipId: b.id };
     }),
   autoSplit: (count, lengthSec, strategy) => {
     const dur = get().duration;
@@ -238,6 +296,12 @@ export const useClipper = create<ClipperState>((set, get) => ({
   toggleCaptions: () => set((s) => ({ showCaptions: !s.showCaptions })),
   captionStyle: "bold",
   setCaptionStyle: (s) => set({ captionStyle: s }),
+  captionColor: "#ffffff",
+  setCaptionColor: (c) => set({ captionColor: c }),
+  captionSize: 24,
+  setCaptionSize: (n) => set({ captionSize: n }),
+  captionPosition: 78,
+  setCaptionPosition: (n) => set({ captionPosition: n }),
 
   waveform: null,
   setWaveform: (w) => set({ waveform: w }),

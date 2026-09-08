@@ -355,3 +355,105 @@ persistence.
    each clip card in the clip list.
 5. **Clip merging** — merge adjacent or overlapping clips into one.
 6. **Actual `.exe` build script** — `bun build --compile` launcher.
+
+---
+
+## Phase 4 Update — Cron Review #3 (Burn-in Fix + Speed/Loop + Caption Editor + Merge/Split)
+
+### Current Project Status Assessment
+
+The app from Phase 3 is stable — `GET /` → 200, no console errors. QA via
+agent-browser found **one real bug**: the caption burn-in export (added in
+Phase 3) was silently rendering nothing because ffmpeg.wasm ships with libass
+but **no fonts** ("can't find selected font provider"). This round fixed that
+bug and added four new feature areas.
+
+### This Round's Completed Modifications
+
+**1. BUG FIX: Caption burn-in now renders** (`export-panel.tsx` + `public/fonts/`)
+- Root cause: ffmpeg.wasm's `subtitles` filter needs a font but the virtual
+  FS has none — libass silently skips rendering.
+- Fix: bundle `DejaVuSans-Bold.ttf` + `DejaVuSans.ttf` in `/public/fonts/`,
+  write the TTF into a `/tmp/fonts/` dir inside ffmpeg's virtual FS before
+  running the filter, and pass `fontsdir=/tmp/fonts` to the `subtitles` filter.
+- Verified end-to-end: VLM confirmed captions are burned into the exported
+  MP4 at the correct timestamps ("This is a test", "Of caption burning",
+  "We will render") with the right styling.
+
+**2. Playback speed control** (`store.ts` + `video-preview.tsx`)
+- Added `playbackRate` state (0.25× to 2×).
+- A gauge-icon button in the controls row shows the current rate and reveals
+  a hover popup with 7 speed presets (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2).
+- An `useEffect` applies `video.playbackRate` whenever the rate changes.
+- Verified: clicking 1.5× set `video.playbackRate` to 1.5.
+
+**3. Loop region** (`store.ts` + `video-preview.tsx` + `timeline.tsx`)
+- Added `loopRegion` ({start,end} | null) and `loopEnabled` (bool) state.
+- A repeat-icon button in the controls row toggles loop. When enabling, it
+  uses the selected clip's range, or the playhead ±1.5s if none selected.
+- An `useEffect` watches `currentTime` and snaps the playhead back to the
+  loop start when it passes the end (and forward to start if behind).
+- The timeline renders a dashed lime **"⟲ LOOP"** overlay band over the
+  loop region. Verified: loop overlay renders (2 "LOOP" labels).
+
+**4. Caption style editor** (`store.ts` + `captions-panel.tsx` + `video-preview.tsx` + `export-panel.tsx`)
+- Added `captionColor` (hex), `captionSize` (12–48px), `captionPosition`
+  (10–90% from top) to the store.
+- The Captions panel now shows a fine-tune card with:
+  - A native color picker + 5 preset swatches (white, amber, lime, pink, blue).
+  - A font-size slider with live px readout.
+  - A vertical-position slider with live % readout.
+- The `CaptionOverlay` component reads these values and applies them to all
+  4 caption styles (bold/minimal/karaoke/boxed).
+- The export's burn-in filter converts the hex color to ASS `&HBBGGRR` format
+  and maps the position % to libass `MarginV`, so exported videos match the
+  in-app preview exactly.
+- Verified: setting color to yellow → preview shows yellow captions → export
+  burns yellow captions. VLM confirmed: "Yellow (with a black outline)".
+
+**5. Clip merge + split** (`store.ts` + `clip-properties.tsx`)
+- `mergeWithNext(id)`: merges a clip with the next one in list order
+  (extends end to next.end, renames "A+B"). Disabled for the last clip.
+- `splitClip(id, atTime)`: splits a clip into two at the given time
+  (creates "A" and "B" with a new color for B). Guards against splits
+  too close to the edges (≤0.3s).
+- Two new buttons in the Clip Properties "Quick actions" grid: **Split**
+  (at playhead) and **Merge next** (with disabled state when N/A).
+- Verified: 1 clip → Split at 6s → 2 clips → Merge next → 1 clip.
+
+### Verification Results (this round)
+
+- Lint clean (`bun run lint` → no errors/warnings).
+- `GET /` → 200, no console errors after reload.
+- **Caption burn-in fix**: VLM confirmed captions render in the exported MP4
+  ("This is a test", "Of caption burning", "We will render") at correct
+  timestamps.
+- **Playback speed**: clicking 1.5× set `video.playbackRate` to 1.5.
+- **Loop region**: overlay renders ("LOOP" labels = 2).
+- **Caption style editor**: yellow color → preview shows yellow → export
+  burns yellow. VLM: "Yellow (with a black outline)".
+- **Merge/split**: 1 → split → 2 → merge → 1 clip (verified via clip count).
+
+### Unresolved Issues / Risks
+
+- **Caption burn-in position mapping** is approximate — the `MarginV` calc
+  assumes a 720p height and uses a 0.4 scaling factor. For other resolutions
+  the vertical position may not match the preview exactly. Could be improved
+  by reading the actual video height from ffmpeg.
+- **IndexedDB blob storage** — large videos still stored in IDB; no quota
+  management yet (deferred from Phase 3).
+- **Mobile layout** still cramped — deferred.
+- All Phase 1–3 known limitations still apply.
+
+### Priority Recommendations for Next Phase
+
+1. **Accurate burn-in position** — read actual video height from ffmpeg and
+   compute `MarginV` precisely so the exported caption position matches the
+   preview pixel-perfectly.
+2. **Storage quota management** — check `navigator.storage.estimate()` and
+   warn/evict when near the limit.
+3. **Mobile timeline popover** — collapse the cramped mobile timeline into a
+   swipeable bottom sheet.
+4. **Mini waveform in clip list cards** — show a tiny waveform per clip.
+5. **Crossfade transitions** between clips in a "stitched" export.
+6. **Actual `.exe` build script** — `bun build --compile` launcher.

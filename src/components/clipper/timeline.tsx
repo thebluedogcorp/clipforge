@@ -50,6 +50,8 @@ export function Timeline() {
   const setInMark = useClipper((s) => s.setInMark);
   const setOutMark = useClipper((s) => s.setOutMark);
   const waveformData = useClipper((s) => s.waveform);
+  const loopEnabled = useClipper((s) => s.loopEnabled);
+  const loopRegion = useClipper((s) => s.loopRegion);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -510,6 +512,21 @@ export function Timeline() {
                 <div className="absolute -top-0 right-0 h-0 w-0 border-y-4 border-r-4 border-y-transparent border-r-fuchsia-400" />
                 <span className="absolute -top-4 right-1 rounded bg-fuchsia-400 px-1 font-mono text-[8px] font-bold text-black">
                   OUT
+                </span>
+              </div>
+            )}
+
+            {/* loop region overlay */}
+            {loopEnabled && loopRegion && (
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 z-15 border-x-2 border-dashed border-primary/70 bg-primary/10"
+                style={{
+                  left: loopRegion.start * pxPerSec,
+                  width: (loopRegion.end - loopRegion.start) * pxPerSec,
+                }}
+              >
+                <span className="absolute -top-4 left-1/2 -translate-x-1/2 rounded bg-primary px-1.5 py-0.5 font-mono text-[8px] font-bold text-primary-foreground">
+                  ⟲ LOOP
                 </span>
               </div>
             )}

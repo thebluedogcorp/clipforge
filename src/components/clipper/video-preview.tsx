@@ -18,6 +18,8 @@ import {
   Subtitles,
   RotateCw,
   Crop,
+  Repeat,
+  Gauge,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -75,6 +77,12 @@ export function VideoPreview() {
   const toggleRotating = useClipper((s) => s.toggleRotating);
   const aspect = useClipper((s) => s.aspect);
   const setAspect = useClipper((s) => s.setAspect);
+  const playbackRate = useClipper((s) => s.playbackRate);
+  const setPlaybackRate = useClipper((s) => s.setPlaybackRate);
+  const loopRegion = useClipper((s) => s.loopRegion);
+  const setLoopRegion = useClipper((s) => s.setLoopRegion);
+  const loopEnabled = useClipper((s) => s.loopEnabled);
+  const toggleLoop = useClipper((s) => s.toggleLoop);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -119,6 +127,25 @@ export function VideoPreview() {
       v.removeEventListener("volumechange", onVol);
     };
   }, [source]);
+
+  // apply playback rate to the video element
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.playbackRate = playbackRate;
+  }, [playbackRate]);
+
+  // loop region: when enabled and playhead passes the end, jump back to start
+  useEffect(() => {
+    if (!loopEnabled || !loopRegion) return;
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.currentTime >= loopRegion.end) {
+      v.currentTime = loopRegion.start;
+    }
+    if (v.currentTime < loopRegion.start) {
+      v.currentTime = loopRegion.start;
+    }
+  }, [currentTime, loopEnabled, loopRegion]);
 
   // sync store with video state
   const setCurrentTimeStore = useClipper((s) => s.setCurrentTime);
@@ -440,6 +467,65 @@ export function VideoPreview() {
               className="w-20"
             />
 
+            <Separator orientation="vertical" className="h-5" />
+
+            {/* Playback speed */}
+            <div className="group relative flex items-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 px-2 font-mono text-[11px] text-muted-foreground hover:text-foreground"
+                title="Playback speed"
+              >
+                <Gauge className="h-3.5 w-3.5" />
+                {playbackRate.toFixed(2).replace(/\.?0+$/, "")}×
+              </Button>
+              <div className="absolute bottom-full left-1/2 z-50 mb-1 hidden -translate-x-1/2 group-hover:block">
+                <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-popover p-1 shadow-xl">
+                  {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setPlaybackRate(r)}
+                      className={`rounded px-1.5 py-1 font-mono text-[10px] transition-colors ${
+                        playbackRate === r
+                          ? "bg-primary/20 text-primary"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      {r}×
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Loop region toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 shrink-0 ${
+                loopEnabled
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => {
+                if (!loopEnabled) {
+                  // enable: use the selected clip's range, or current playhead ±3s
+                  const sel = useClipper.getState().clips.find((c) => c.id === useClipper.getState().selectedClipId);
+                  if (sel) {
+                    setLoopRegion({ start: sel.start, end: sel.end });
+                  } else {
+                    const t = videoController.currentTime;
+                    setLoopRegion({ start: Math.max(0, t - 1.5), end: t + 1.5 });
+                  }
+                }
+                toggleLoop();
+              }}
+              title="Loop region (toggle)"
+            >
+              <Repeat className="h-4 w-4" />
+            </Button>
+
             <Button
               variant="ghost"
               size="icon"
@@ -462,18 +548,22 @@ function CaptionOverlay({
   text: string;
   style: "minimal" | "bold" | "karaoke" | "boxed";
 }) {
+  const color = useClipper((s) => s.captionColor);
+  const size = useClipper((s) => s.captionSize);
+  const position = useClipper((s) => s.captionPosition);
   const base =
-    "pointer-events-none absolute bottom-16 left-1/2 z-20 max-w-[80%] -translate-x-1/2 text-center";
+    "pointer-events-none absolute left-1/2 z-20 max-w-[80%] -translate-x-1/2 text-center";
+  const posStyle = { top: `${position}%`, color, fontSize: `${size}px` };
   if (style === "minimal") {
     return (
-      <div className={`${base} text-base text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]`}>
+      <div className={`${base} drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]`} style={posStyle}>
         {text}
       </div>
     );
   }
   if (style === "boxed") {
     return (
-      <div className={`${base} rounded-md bg-black/80 px-3 py-1.5 text-base font-medium text-white`}>
+      <div className={`${base} rounded-md bg-black/80 px-3 py-1.5 font-medium`} style={posStyle}>
         {text}
       </div>
     );
@@ -481,13 +571,13 @@ function CaptionOverlay({
   if (style === "karaoke") {
     const words = text.split(" ");
     return (
-      <div className={`${base} flex flex-wrap justify-center gap-x-1.5 gap-y-1`}>
+      <div className={`${base} flex flex-wrap justify-center gap-x-1.5 gap-y-1`} style={posStyle}>
         {words.map((w, i) => (
           <span
             key={i}
-            className="rounded bg-black/70 px-1 text-base font-extrabold uppercase tracking-tight text-white"
+            className="rounded bg-black/70 px-1 font-extrabold uppercase tracking-tight"
             style={{
-              color: i < words.length / 2 ? "oklch(0.82 0.19 132)" : "white",
+              color: i < words.length / 2 ? "oklch(0.82 0.19 132)" : color,
             }}
           >
             {w}
@@ -499,8 +589,8 @@ function CaptionOverlay({
   // bold
   return (
     <div
-      className={`${base} text-2xl font-extrabold uppercase tracking-tight text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.95)]`}
-      style={{ WebkitTextStroke: "1px rgba(0,0,0,0.6)" }}
+      className={`${base} font-extrabold uppercase tracking-tight drop-shadow-[0_3px_8px_rgba(0,0,0,0.95)]`}
+      style={{ ...posStyle, WebkitTextStroke: "1px rgba(0,0,0,0.6)" }}
     >
       {text}
     </div>

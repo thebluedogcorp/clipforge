@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -41,6 +42,12 @@ export function CaptionsPanel() {
   const toggleCaptions = useClipper((s) => s.toggleCaptions);
   const captionStyle = useClipper((s) => s.captionStyle);
   const setCaptionStyle = useClipper((s) => s.setCaptionStyle);
+  const captionColor = useClipper((s) => s.captionColor);
+  const setCaptionColor = useClipper((s) => s.setCaptionColor);
+  const captionSize = useClipper((s) => s.captionSize);
+  const setCaptionSize = useClipper((s) => s.setCaptionSize);
+  const captionPosition = useClipper((s) => s.captionPosition);
+  const setCaptionPosition = useClipper((s) => s.setCaptionPosition);
   const setBusy = useClipper((s) => s.setBusy);
   const [loading, setLoading] = useState(false);
 
@@ -142,6 +149,60 @@ export function CaptionsPanel() {
             <ToggleGroupItem value="karaoke" className="text-[10px]">Karaoke</ToggleGroupItem>
             <ToggleGroupItem value="boxed" className="text-[10px]">Boxed</ToggleGroupItem>
           </ToggleGroup>
+
+          {/* fine-tune controls */}
+          <div className="space-y-2.5 rounded-lg border border-border/50 bg-background/40 p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-[11px] text-muted-foreground">Text color</Label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="color"
+                  value={captionColor}
+                  onChange={(e) => setCaptionColor(e.target.value)}
+                  className="h-6 w-8 cursor-pointer rounded border border-border/60 bg-transparent"
+                />
+                {["#ffffff", "#fbbf24", "#a3e635", "#f472b6", "#60a5fa"].map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setCaptionColor(c)}
+                    className={`h-5 w-5 rounded-full ring-1 ring-offset-1 ring-offset-background transition-transform hover:scale-110 ${
+                      captionColor === c ? "ring-white/70" : "ring-border"
+                    }`}
+                    style={{ background: c }}
+                    aria-label={`color ${c}`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] text-muted-foreground">Font size</Label>
+                <span className="font-mono text-[11px] text-foreground/80">{captionSize}px</span>
+              </div>
+              <Slider
+                value={[captionSize]}
+                min={12}
+                max={48}
+                step={1}
+                onValueChange={([v]) => setCaptionSize(v)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] text-muted-foreground">Vertical position</Label>
+                <span className="font-mono text-[11px] text-foreground/80">{captionPosition}%</span>
+              </div>
+              <Slider
+                value={[captionPosition]}
+                min={10}
+                max={90}
+                step={1}
+                onValueChange={([v]) => setCaptionPosition(v)}
+              />
+            </div>
+          </div>
         </div>
       )}
 

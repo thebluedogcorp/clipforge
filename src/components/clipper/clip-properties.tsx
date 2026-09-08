@@ -1,6 +1,6 @@
 "use client";
 
-import { Film, Palette, Clock, ArrowRight, Copy, Scissors, Trash2 } from "lucide-react";
+import { Film, Palette, Clock, ArrowRight, Copy, Scissors, Trash2, Split, GitMerge } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ export function ClipProperties() {
   const updateClip = useClipper((s) => s.updateClip);
   const duplicateClip = useClipper((s) => s.duplicateClip);
   const removeClip = useClipper((s) => s.removeClip);
+  const mergeWithNext = useClipper((s) => s.mergeWithNext);
+  const splitClip = useClipper((s) => s.splitClip);
   const duration = useClipper((s) => s.duration);
   const thumbnails = useClipper((s) => s.thumbnails);
   const inMark = useClipper((s) => s.inMark);
@@ -214,6 +216,32 @@ export function ClipProperties() {
           >
             <Copy className="h-3.5 w-3.5" />
             Duplicate
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={() => {
+              // split at the playhead (current time from store)
+              const t = useClipper.getState().currentTime;
+              splitClip(clip.id, t);
+            }}
+            disabled={!duration}
+            title="Split at playhead"
+          >
+            <Split className="h-3.5 w-3.5" />
+            Split
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={() => mergeWithNext(clip.id)}
+            disabled={clips.findIndex((c) => c.id === clip.id) >= clips.length - 1}
+            title="Merge with next clip"
+          >
+            <GitMerge className="h-3.5 w-3.5" />
+            Merge next
           </Button>
         </div>
         <Button
