@@ -154,8 +154,8 @@ interface ClipperState {
   setMusicMuted: (v: boolean) => void;
 
   // ui
-  activePanel: "clips" | "transcript" | "captions" | "export" | "filters";
-  setActivePanel: (p: "clips" | "transcript" | "captions" | "export" | "filters") => void;
+  activePanel: "clips" | "transcript" | "captions" | "export" | "filters" | "deps";
+  setActivePanel: (p: "clips" | "transcript" | "captions" | "export" | "filters" | "deps") => void;
   busy: { label: string; progress: number } | null;
   setBusy: (b: { label: string; progress: number } | null) => void;
   shortcutsOpen: boolean;

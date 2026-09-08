@@ -1,6 +1,6 @@
 "use client";
 
-import { SlidersHorizontal, Mic, Subtitles, Download, Wand2 } from "lucide-react";
+import { SlidersHorizontal, Mic, Subtitles, Download, Wand2, Settings } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useClipper } from "@/lib/store";
 import { ClipProperties } from "./clip-properties";
@@ -8,6 +8,7 @@ import { TranscriptionPanel } from "./transcription-panel";
 import { CaptionsPanel } from "./captions-panel";
 import { ExportPanel } from "./export-panel";
 import { FiltersPanel } from "./filters-panel";
+import { DepsInstaller } from "./deps-installer";
 
 export function RightPanel() {
   const active = useClipper((s) => s.activePanel);
@@ -15,7 +16,7 @@ export function RightPanel() {
 
   return (
     <Tabs value={active} onValueChange={(v) => setActive(v as any)} className="flex h-full flex-col">
-      <TabsList className="grid w-full grid-cols-5 rounded-none border-b border-border/50 bg-transparent p-0">
+      <TabsList className="grid w-full grid-cols-6 rounded-none border-b border-border/50 bg-transparent p-0">
         <TabsTrigger
           value="clips"
           className="flex flex-col items-center gap-1 rounded-none border-b-2 border-transparent py-2 text-[10px] data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary"
@@ -51,6 +52,13 @@ export function RightPanel() {
           <Download className="h-3.5 w-3.5" />
           Export
         </TabsTrigger>
+        <TabsTrigger
+          value="deps"
+          className="flex flex-col items-center gap-1 rounded-none border-b-2 border-transparent py-2 text-[10px] data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Setup
+        </TabsTrigger>
       </TabsList>
 
       <div className="flex-1 overflow-y-auto p-3">
@@ -68,6 +76,9 @@ export function RightPanel() {
         </TabsContent>
         <TabsContent value="export" className="mt-0 animate-fade-in">
           <ExportPanel />
+        </TabsContent>
+        <TabsContent value="deps" className="mt-0 animate-fade-in">
+          <DepsInstaller />
         </TabsContent>
       </div>
     </Tabs>

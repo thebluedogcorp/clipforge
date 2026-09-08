@@ -190,18 +190,26 @@ const server = Bun.serve({
           const outFile = join(dlDir, `${id}.mp4`);
 
           if (!existsSync(outFile)) {
-            // Find yt-dlp
+            // Find yt-dlp — check bin/ directory first, then system PATH
+            const binDir = join(exeDir, "bin");
+            const ytDlpName = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp";
+            const bundledPath = join(binDir, ytDlpName);
             let ytDlpPath = "";
-            try {
-              ytDlpPath = execSync(
-                process.platform === "win32" ? "where yt-dlp" : "which yt-dlp",
-                { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }
-              ).trim().split("\n")[0].trim();
-            } catch {}
+
+            if (existsSync(bundledPath)) {
+              ytDlpPath = bundledPath;
+            } else {
+              try {
+                ytDlpPath = execSync(
+                  process.platform === "win32" ? "where yt-dlp" : "which yt-dlp",
+                  { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }
+                ).trim().split("\n")[0].trim();
+              } catch {}
+            }
 
             if (!ytDlpPath) {
               return new Response(JSON.stringify({
-                error: "yt-dlp not found. Install it from https://github.com/yt-dlp/yt-dlp"
+                error: "yt-dlp not found. Go to the Setup tab in the app to install it, or install from https://github.com/yt-dlp/yt-dlp"
               }), { status: 500, headers: { "Content-Type": "application/json" } });
             }
 
@@ -238,6 +246,56 @@ const server = Bun.serve({
               ...corsHeaders,
             },
           });
+        }
+        if (path === "/api/install-deps" && req.method === "POST") {
+          // Download yt-dlp or ffmpeg into ./bin/
+          const body = await req.json();
+          const tool = body.tool;
+          if (!tool) return new Response(JSON.stringify({ error: "Missing tool" }), { status: 400, headers: { "Content-Type": "application/json" } });
+
+          const { existsSync, mkdirSync, writeFileSync, chmodSync } = await import("node:fs");
+          const binDir = join(exeDir, "bin");
+          if (!existsSync(binDir)) mkdirSync(binDir, { recursive: true });
+
+          let dlUrl: string, fileName: string;
+          if (tool === "yt-dlp") {
+            if (process.platform === "win32") { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"; fileName = "yt-dlp.exe"; }
+            else if (process.platform === "darwin") { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"; fileName = "yt-dlp"; }
+            else { dlUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"; fileName = "yt-dlp"; }
+          } else if (tool === "ffmpeg") {
+            if (process.platform === "win32") { dlUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"; fileName = "ffmpeg.zip"; }
+            else if (process.platform === "darwin") { dlUrl = "https://evermeet.cx/ffmpeg/getrelease/zip"; fileName = "ffmpeg.zip"; }
+            else { dlUrl = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"; fileName = "ffmpeg.tar.xz"; }
+          } else {
+            return new Response(JSON.stringify({ error: `Unknown tool: ${tool}` }), { status: 400, headers: { "Content-Type": "application/json" } });
+          }
+
+          const outPath = join(binDir, fileName);
+          try {
+            const res = await fetch(dlUrl);
+            if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+            const buf = new Uint8Array(await res.arrayBuffer());
+            writeFileSync(outPath, buf);
+            if (process.platform !== "win32" && tool === "yt-dlp") chmodSync(outPath, 0o755);
+            return new Response(JSON.stringify({ success: true, tool, path: outPath, message: `${tool} installed to ${outPath}` }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          } catch (err: any) {
+            return new Response(JSON.stringify({ error: `Failed: ${err?.message}` }), { status: 500, headers: { "Content-Type": "application/json" } });
+          }
+        }
+        if (path === "/api/install-deps" && req.method === "GET") {
+          // Check status
+          const { existsSync } = await import("node:fs");
+          const { execSync } = await import("node:child_process");
+          const binDir = join(exeDir, "bin");
+          const ytDlpBundled = existsSync(join(binDir, process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"));
+          const ffmpegBundled = existsSync(join(binDir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"));
+          let ytDlpSystem = false, ffmpegSystem = false;
+          try { execSync(process.platform === "win32" ? "where yt-dlp" : "which yt-dlp", { stdio: ["pipe", "pipe", "ignore"] }); ytDlpSystem = true; } catch {}
+          try { execSync(process.platform === "win32" ? "where ffmpeg" : "which ffmpeg", { stdio: ["pipe", "pipe", "ignore"] }); ffmpegSystem = true; } catch {}
+          return new Response(JSON.stringify({
+            ytDlp: { bundled: ytDlpBundled, system: ytDlpSystem, installed: ytDlpBundled || ytDlpSystem },
+            ffmpeg: { bundled: ffmpegBundled, system: ffmpegSystem, installed: ffmpegBundled || ffmpegSystem },
+          }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
         }
         return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
       } catch (err: any) {

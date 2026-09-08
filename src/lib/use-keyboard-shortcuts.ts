@@ -164,6 +164,10 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           s.setActivePanel("filters");
           break;
+        case "6":
+          e.preventDefault();
+          s.setActivePanel("deps");
+          break;
         case "n":
         case "N":
           e.preventDefault();
