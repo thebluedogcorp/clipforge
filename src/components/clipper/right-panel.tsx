@@ -46,16 +46,16 @@ export function RightPanel() {
       </TabsList>
 
       <div className="flex-1 overflow-y-auto p-3">
-        <TabsContent value="clips" className="mt-0">
+        <TabsContent value="clips" className="mt-0 animate-fade-in">
           <ClipProperties />
         </TabsContent>
-        <TabsContent value="transcript" className="mt-0">
+        <TabsContent value="transcript" className="mt-0 animate-fade-in">
           <TranscriptionPanel />
         </TabsContent>
-        <TabsContent value="captions" className="mt-0">
+        <TabsContent value="captions" className="mt-0 animate-fade-in">
           <CaptionsPanel />
         </TabsContent>
-        <TabsContent value="export" className="mt-0">
+        <TabsContent value="export" className="mt-0 animate-fade-in">
           <ExportPanel />
         </TabsContent>
       </div>

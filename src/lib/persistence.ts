@@ -64,6 +64,9 @@ export interface PersistedState {
   fileBlobKey: string | null;
   aspect: "16:9" | "9:16" | "1:1" | "4:5";
   captionStyle: "minimal" | "bold" | "karaoke" | "boxed";
+  captionColor: string;
+  captionSize: number;
+  captionPosition: number;
   savedAt: number;
 }
 

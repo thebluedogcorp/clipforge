@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   Plus,
   Trash2,
@@ -157,7 +158,7 @@ function SortableClipItem({
       ref={setNodeRef}
       style={style}
       onClick={onSelect}
-      className={`group relative flex cursor-pointer items-stretch gap-0 overflow-hidden rounded-lg border transition-all ${
+      className={`group relative flex cursor-pointer items-stretch gap-0 overflow-hidden rounded-lg border clip-card-hover transition-all ${
         selected
           ? "border-primary/60 bg-primary/8 shadow-[0_0_0_1px_var(--primary)]"
           : "border-border/50 bg-card/40 hover:border-border hover:bg-card/70"
@@ -211,6 +212,8 @@ function SortableClipItem({
             {formatTime(clip.start)}–{formatTime(clip.end)}
           </span>
         </div>
+        {/* mini waveform */}
+        <MiniWaveform start={clip.start} end={clip.end} color={clip.color} />
       </div>
 
       {/* actions */}
@@ -252,6 +255,41 @@ function SortableClipItem({
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** A tiny waveform strip showing the audio envelope for a clip's time range. */
+function MiniWaveform({ start, end, color }: { start: number; end: number; color: string }) {
+  const wave = useClipper((s) => s.waveform);
+  const bars = 32;
+  const heights = useMemo(() => {
+    if (!wave || wave.peaks.length === 0) return new Array(bars).fill(0.15);
+    const srcDur = wave.duration || 1;
+    const out: number[] = [];
+    for (let i = 0; i < bars; i++) {
+      const tStart = start + ((end - start) * i) / bars;
+      const tEnd = start + ((end - start) * (i + 1)) / bars;
+      const pStart = Math.floor((tStart / srcDur) * wave.peaks.length);
+      const pEnd = Math.max(pStart + 1, Math.floor((tEnd / srcDur) * wave.peaks.length));
+      let peak = 0;
+      for (let j = pStart; j < pEnd && j < wave.peaks.length; j++) {
+        if (wave.peaks[j] > peak) peak = wave.peaks[j];
+      }
+      out.push(Math.max(0.1, peak));
+    }
+    return out;
+  }, [wave, start, end]);
+
+  return (
+    <div className="mt-1 flex h-3 items-center gap-px overflow-hidden">
+      {heights.map((h, i) => (
+        <div
+          key={i}
+          className="w-px shrink-0 rounded-full"
+          style={{ height: `${h * 100}%`, background: color, opacity: 0.7 }}
+        />
+      ))}
     </div>
   );
 }

@@ -9,7 +9,7 @@ export function BusyOverlay() {
   if (!busy) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/60 backdrop-blur-sm">
-      <div className="w-[320px] rounded-2xl border border-border/60 bg-card p-5 shadow-2xl">
+      <div className="w-[320px] animate-scale-in rounded-2xl border border-border/60 bg-card p-5 shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 text-primary">
             <Loader2 className="h-4 w-4 animate-spin" />

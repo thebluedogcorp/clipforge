@@ -188,3 +188,64 @@ input[type="range"].slick-range::-webkit-slider-thumb {
 .pulse-dot {
   animation: pulse-dot 1.4s ease-in-out infinite;
 }
+
+/* fade-in for panels / tabs / overlays */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out;
+}
+
+/* slide-in for sheets / dialogs */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* scale-in for buttons / cards */
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
+}
+
+/* shimmer for loading states */
+@keyframes shimmer-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.shimmer-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(1 0 0 / 0.08),
+    transparent
+  );
+  animation: shimmer-bar 1.5s ease-in-out infinite;
+}
+
+/* refined button hover — subtle lift */
+button:not(:disabled):not([data-disabled]):hover {
+  transition: transform 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+button:not(:disabled):not([data-disabled]):active {
+  transform: scale(0.97);
+}
+
+/* clip card hover — subtle border glow */
+.clip-card-hover {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+.clip-card-hover:hover {
+  box-shadow: 0 0 0 1px oklch(0.82 0.19 132 / 0.15), 0 4px 12px -4px oklch(0 0 0 / 0.4);
+}

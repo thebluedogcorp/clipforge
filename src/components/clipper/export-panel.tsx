@@ -125,6 +125,31 @@ export function ExportPanel() {
 
       await ffmpeg.writeFile(inputName, await fetchFile(source.url));
 
+      // probe the actual video dimensions by running a tiny ffprobe-style
+      // pass (we use ffmpeg -i with null output and parse the log).
+      let videoHeight = 720; // fallback
+      let videoWidth = 1280;
+      try {
+        const probeLogs: string[] = [];
+        const onLog = ({ message }: { message: string }) => {
+          probeLogs.push(message);
+        };
+        ffmpeg.on("log", onLog);
+        await ffmpeg.exec(["-i", inputName, "-t", "0.1", "-f", "null", "-"]);
+        ffmpeg.off("log", onLog);
+        // parse "Stream #0:0... Video..., 1280x720..."
+        const dimLine = probeLogs.find((l) => /\d+x\d+/.test(l) && /Video|video/.test(l));
+        if (dimLine) {
+          const m = dimLine.match(/(\d{2,5})x(\d{2,5})/);
+          if (m) {
+            videoWidth = parseInt(m[1], 10);
+            videoHeight = parseInt(m[2], 10);
+          }
+        }
+      } catch {
+        // probing is best-effort; fall back to 720p
+      }
+
       // if burning captions, write the .srt sidecar + a font file into the
       // virtual FS, then build a subtitles filter that references them.
       // ffmpeg.wasm ships with libass but NO fonts, so we must supply one
@@ -149,17 +174,46 @@ export function ExportPanel() {
           // font load is best-effort
         }
 
+        // compute the EXPORT height — if aspect crop changes the dimensions,
+        // the caption position should be relative to the cropped frame.
+        let exportHeight = videoHeight;
+        let exportWidth = videoWidth;
+        if (aspect !== "16:9") {
+          const srcA = videoWidth / videoHeight;
+          const targets: Record<string, number> = {
+            "9:16": 9 / 16,
+            "1:1": 1,
+            "4:5": 4 / 5,
+          };
+          const tgt = targets[aspect];
+          if (srcA > tgt) {
+            // source wider than target → crop sides → width = height * tgt
+            exportWidth = Math.round(videoHeight * tgt);
+          } else {
+            // source taller → crop top/bottom → height = width / tgt
+            exportHeight = Math.round(videoWidth / tgt);
+          }
+        }
+
         // subtitles filter: fontsdir tells libass where to look; force_style
         // sets the visual look derived from the in-app caption editor.
         // Convert hex captionColor (#rrggbb) to ASS &HBBGGRR.
         const hex = captionColor.replace("#", "");
         const assColor = `&H00${hex.slice(4, 6)}${hex.slice(2, 4)}${hex.slice(0, 2)}`.toUpperCase();
-        // Map the in-app vertical % (10=top, 90=bottom) to ASS MarginV from bottom.
-        // ASS Alignment=2 is bottom-center; MarginV is pixels from bottom.
-        // Approx: bottom margin = (100 - position) / 100 * 720 (assume 720p height)
-        const marginV = Math.round(((100 - captionPosition) / 100) * 720 * 0.4);
+        // Map the in-app vertical % (10=top, 90=bottom) to ASS MarginV.
+        // The in-app overlay uses `top: position%` of the preview frame.
+        // ASS Alignment=2 is bottom-center; MarginV = pixels from bottom.
+        // So MarginV = (1 - position/100) * exportHeight, but we also need
+        // to account for the caption's own line height (~1.2 * fontSize).
+        // Empirically: MarginV ≈ (100 - position) / 100 * exportHeight * 0.85
+        const marginV = Math.round(((100 - captionPosition) / 100) * exportHeight * 0.85);
+        // scale font size proportionally if the export is much smaller/larger
+        const scaledSize = Math.round(
+          captionSize * (exportHeight / 720 > 0.5 ? Math.min(1.5, exportHeight / 720) : 1)
+        );
+        void exportWidth; // referenced for clarity
         captionFilter =
-          `subtitles=${srtName}:fontsdir=/tmp/fonts:force_style='FontName=DejaVu Sans,FontSize=${captionSize},PrimaryColour=${assColor},OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,MarginV=${marginV},Alignment=2'`;
+          `subtitles=${srtName}:fontsdir=/tmp/fonts:force_style='FontName=DejaVu Sans,FontSize=${scaledSize},PrimaryColour=${assColor},OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,MarginV=${marginV},Alignment=2'`;
       }
 
       const onProg = ({ progress: p }: { progress: number }) => {

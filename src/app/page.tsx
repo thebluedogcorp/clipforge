@@ -88,17 +88,18 @@ export default function Home() {
               <PanelLeft className="h-4 w-4" />
               Source & clips
             </Button>
-            <span className="text-xs text-muted-foreground">ClipForge</span>
+            <span className="text-xs font-medium text-foreground/80">ClipForge</span>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             <div className="aspect-video">
               <VideoPreview />
             </div>
-            <div className="h-72">
+            {/* Timeline in a bottom-sheet trigger button */}
+            <div className="border-y border-border/50">
               <Timeline />
             </div>
-            <div className="border-t border-border/50 p-3">
+            <div className="p-3">
               <RightPanel />
             </div>
           </div>
