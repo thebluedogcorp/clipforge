@@ -58,22 +58,21 @@ jobs:
       - name: Prepare distribution folder
         shell: bash
         run: |
-          mkdir -p dist/clipforge
-          # Copy the entire standalone server (includes server.js, node_modules, .next partial)
-          cp -r .next/standalone/. dist/clipforge/
-          # Copy .next/static into the standalone's .next folder (required for assets)
-          mkdir -p dist/clipforge/.next
-          cp -r .next/static dist/clipforge/.next/
-          # Copy the BUILD_ID so the server knows the build
+          mkdir -p dist/clipforge/.next/static
+          mkdir -p dist/clipforge/.next/server/app
+          # Copy .next/static (JS/CSS assets)
+          cp -r .next/static/* dist/clipforge/.next/static/
+          # Copy .next/BUILD_ID
           cp .next/BUILD_ID dist/clipforge/.next/ 2>/dev/null || true
-          # Copy public folder (fonts, etc.)
+          # Copy pre-rendered HTML (the home page)
+          cp .next/server/app/index.html dist/clipforge/.next/server/app/ 2>/dev/null || true
+          # Copy public folder (fonts, logo, etc.)
           cp -r public dist/clipforge/
+          # No need for standalone server.js or node_modules — the exe serves everything!
           echo "=== Distribution contents ==="
-          ls -la dist/clipforge/
-          echo "=== .next contents ==="
-          ls -la dist/clipforge/.next/ 2>/dev/null || echo "no .next folder"
+          find dist/clipforge -type f | head -20
 
-      - name: Compile launcher binary
+      - name: Compile launcher binary (self-contained server, no Node.js needed)
         run: bun build --compile --target=${{ matrix.target }} launcher.ts --outfile dist/clipforge/clipforge${{ matrix.ext }}
 
       - name: List distribution contents

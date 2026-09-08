@@ -27,9 +27,9 @@
 4. **Run** `clipforge.exe` (Windows) or `./clipforge` (macOS/Linux)
 5. Your browser opens automatically at `http://localhost:3000`
 
-> **Requirements**: [Node.js](https://nodejs.org) 18+ must be installed on your
-> system (the launcher uses it to run the server). Your video files never leave
-> your machine.
+> **No installation required.** The exe includes the Bun runtime and serves
+> the app directly — no Node.js or other dependencies needed. Your video
+> files never leave your machine.
 
 ---
 
