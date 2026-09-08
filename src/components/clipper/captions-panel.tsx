@@ -31,6 +31,7 @@ import { useClipper } from "@/lib/store";
 import { videoController } from "@/lib/video-controller";
 import { formatTime, uid } from "@/lib/format";
 import { toast } from "sonner";
+import { CAPTION_PRESETS, getPreset } from "@/lib/caption-presets";
 import type { CaptionSegment } from "@/lib/types";
 
 export function CaptionsPanel() {
@@ -48,6 +49,8 @@ export function CaptionsPanel() {
   const setCaptionSize = useClipper((s) => s.setCaptionSize);
   const captionPosition = useClipper((s) => s.captionPosition);
   const setCaptionPosition = useClipper((s) => s.setCaptionPosition);
+  const captionPresetId = useClipper((s) => s.captionPresetId);
+  const setCaptionPresetId = useClipper((s) => s.setCaptionPresetId);
   const setBusy = useClipper((s) => s.setBusy);
   const [loading, setLoading] = useState(false);
 
@@ -136,20 +139,56 @@ export function CaptionsPanel() {
         <div className="space-y-2">
           <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Type className="h-3.5 w-3.5" />
-            Caption style
+            Caption style ({CAPTION_PRESETS.length} presets)
           </Label>
-          <ToggleGroup
-            type="single"
-            value={captionStyle}
-            onValueChange={(v) => v && setCaptionStyle(v as any)}
-            className="grid w-full grid-cols-4 gap-1"
-          >
-            <ToggleGroupItem value="bold" className="text-[10px]">Bold</ToggleGroupItem>
-            <ToggleGroupItem value="minimal" className="text-[10px]">Minimal</ToggleGroupItem>
-            <ToggleGroupItem value="karaoke" className="text-[10px]">Karaoke</ToggleGroupItem>
-            <ToggleGroupItem value="boxed" className="text-[10px]">Boxed</ToggleGroupItem>
-          </ToggleGroup>
-
+          <ScrollArea className="h-[140px] rounded-lg border border-border/50 bg-background/40">
+            <div className="grid grid-cols-2 gap-1 p-2">
+              {CAPTION_PRESETS.map((preset) => {
+                const active = captionPresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      setCaptionPresetId(preset.id);
+                      // sync the legacy captionStyle + color for the overlay
+                      if (preset.karaoke) setCaptionStyle("karaoke");
+                      else if (preset.background) setCaptionStyle("boxed");
+                      else if (preset.id === "minimal") setCaptionStyle("minimal");
+                      else setCaptionStyle("bold");
+                      setCaptionColor(preset.primaryColor);
+                    }}
+                    className={`flex flex-col items-start gap-0.5 rounded-md border p-1.5 text-left transition-all ${
+                      active
+                        ? "border-primary/50 bg-primary/10"
+                        : "border-border/40 hover:border-border hover:bg-card/60"
+                    }`}
+                  >
+                    <span className="text-[10px] font-medium text-foreground/90">{preset.label}</span>
+                    <span
+                      className="text-[9px] font-mono text-muted-foreground"
+                      style={{ fontFamily: preset.fontFamily }}
+                    >
+                      {preset.fontFamily}
+                    </span>
+                    {/* mini preview */}
+                    <div
+                      className="mt-0.5 rounded px-1 py-0.5 text-[8px] font-bold"
+                      style={{
+                        fontFamily: preset.fontFamily,
+                        color: preset.primaryColor,
+                        WebkitTextStroke: `${Math.min(preset.outline, 2)}px ${preset.outlineColor}`,
+                        textTransform: preset.uppercase ? "uppercase" : "none",
+                        letterSpacing: preset.tracking ? `${preset.tracking}em` : "normal",
+                        background: preset.background ? preset.backgroundColor : "transparent",
+                      }}
+                    >
+                      Sample text
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </ScrollArea>
           {/* fine-tune controls */}
           <div className="space-y-2.5 rounded-lg border border-border/50 bg-background/40 p-2.5">
             <div className="flex items-center justify-between gap-2">

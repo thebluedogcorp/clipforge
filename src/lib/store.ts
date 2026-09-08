@@ -77,6 +77,22 @@ interface ClipperState {
   setCaptionSize: (n: number) => void;
   captionPosition: number; // 0..100, % from top
   setCaptionPosition: (n: number) => void;
+  captionPresetId: string; // ID from CAPTION_PRESETS
+  setCaptionPresetId: (id: string) => void;
+
+  // color grade + cinematic effects
+  colorGrade: string; // ID from COLOR_GRADES
+  setColorGrade: (id: string) => void;
+  cinematicEffects: import("@/lib/cinematic-effects").EffectSettings;
+  setCinematicEffects: (e: Partial<import("@/lib/cinematic-effects").EffectSettings>) => void;
+
+  // fit mode: crop (fill aspect) or square (1:1 rounded on 9:16 black)
+  fitMode: "crop" | "square";
+  setFitMode: (m: "crop" | "square") => void;
+  squareCorners: "round" | "sharp";
+  setSquareCorners: (c: "round" | "sharp") => void;
+  barText: string | null; // title text above the square
+  setBarText: (t: string | null) => void;
 
   // video filters (applied to preview + export)
   filters: {
@@ -335,6 +351,20 @@ export const useClipper = create<ClipperState>((set, get) => ({
   setCaptionSize: (n) => set({ captionSize: n }),
   captionPosition: 78,
   setCaptionPosition: (n) => set({ captionPosition: n }),
+  captionPresetId: "bold_white",
+  setCaptionPresetId: (id) => set({ captionPresetId: id }),
+
+  colorGrade: "none",
+  setColorGrade: (id) => set({ colorGrade: id }),
+  cinematicEffects: { glow: false, glowStrength: 50, bottomFade: false, bottomFadeStrength: 50, topFade: false, topFadeStrength: 50, vignette: false, vignetteStrength: 40, grain: false, grainStrength: 40 },
+  setCinematicEffects: (e) => set((s) => ({ cinematicEffects: { ...s.cinematicEffects, ...e } })),
+
+  fitMode: "crop",
+  setFitMode: (m) => set({ fitMode: m }),
+  squareCorners: "round",
+  setSquareCorners: (c) => set({ squareCorners: c }),
+  barText: null,
+  setBarText: (t) => set({ barText: t }),
 
   filters: { brightness: 1, contrast: 1, saturation: 1, grayscale: 0, blur: 0 },
   setFilters: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),

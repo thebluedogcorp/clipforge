@@ -9,6 +9,8 @@ import { useClipper } from "@/lib/store";
 import { getFFmpeg } from "@/lib/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import { toast } from "sonner";
+import { suggestMood } from "@/lib/mood-detector";
+import { useMemo } from "react";
 
 export function TranscriptionPanel() {
   const source = useClipper((s) => s.source);
@@ -134,13 +136,17 @@ export function TranscriptionPanel() {
       )}
 
       {transcript ? (
-        <ScrollArea className="h-[44vh] rounded-lg border border-border/50 bg-card/40">
-          <div className="p-3">
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-              {transcript}
-            </p>
-          </div>
-        </ScrollArea>
+        <>
+          {/* Mood detection */}
+          <MoodDisplay transcript={transcript} />
+          <ScrollArea className="h-[40vh] rounded-lg border border-border/50 bg-card/40">
+            <div className="p-3">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+                {transcript}
+              </p>
+            </div>
+          </ScrollArea>
+        </>
       ) : (
         !loading && (
           <div className="space-y-3 rounded-xl border border-border/50 bg-gradient-to-b from-card/60 to-card/30 p-4">
@@ -182,6 +188,32 @@ export function TranscriptionPanel() {
           placeholder="Edit transcript…"
         />
       )}
+    </div>
+  );
+}
+
+function MoodDisplay({ transcript }: { transcript: string }) {
+  const mood = useMemo(() => suggestMood(transcript), [transcript]);
+  if (mood.mood === "neutral") return null;
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/5 p-2.5 animate-fade-in">
+      <span className="text-2xl">{mood.emoji}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-semibold text-primary">{mood.label}</p>
+        <p className="text-[10px] text-muted-foreground">{mood.hint}</p>
+      </div>
+      <div className="flex gap-1">
+        {Object.entries(mood.scores).map(([m, s]) => (
+          s > 0 && (
+            <div key={m} className="flex flex-col items-center" title={`${m}: ${s}`}>
+              <div
+                className="w-1.5 rounded-full bg-primary/40"
+                style={{ height: `${Math.min(s * 8, 24)}px` }}
+              />
+            </div>
+          )
+        ))}
+      </div>
     </div>
   );
 }

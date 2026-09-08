@@ -39,6 +39,7 @@ import { useClipper } from "@/lib/store";
 import { getFFmpeg } from "@/lib/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import { formatTime, formatBytes, buildSrt, uid } from "@/lib/format";
+import { buildEffectFilter } from "@/lib/cinematic-effects";
 import { toast } from "sonner";
 import type { ExportFormat, ExportJob } from "@/lib/types";
 
@@ -277,8 +278,23 @@ export function ExportPanel() {
         }
       }
 
-      // build the video filter chain: crop to aspect + video filters + caption burn-in
+      // build the video filter chain: color grade + manual filters + cinematic effects + crop + caption burn-in
       const vfParts: string[] = [];
+      // color grade (warm, cool, teal_orange, vintage, vibrant, bw)
+      const gradeId = useClipper.getState().colorGrade;
+      const gradeFilter = (() => {
+        switch (gradeId) {
+          case "warm": return "eq=saturation=1.10,colorbalance=rm=0.06:gm=0.02:bm=-0.06:rh=0.05:bh=-0.06";
+          case "cool": return "eq=saturation=1.05,colorbalance=rm=-0.05:bm=0.06:bh=0.06";
+          case "teal_orange": return "colorbalance=rh=0.08:gh=0.02:bh=-0.05:bs=0.06:gs=0.02:rs=-0.05,eq=saturation=1.12:contrast=1.05";
+          case "vintage": return "curves=preset=vintage";
+          case "vibrant": return "eq=saturation=1.35:contrast=1.08:brightness=0.01";
+          case "bw": return "hue=s=0,eq=contrast=1.10";
+          default: return "";
+        }
+      })();
+      if (gradeFilter) vfParts.push(gradeFilter);
+
       // video color filters (brightness/contrast/saturation/grayscale/blur)
       const flt = useClipper.getState().filters;
       const eqParts: string[] = [];
@@ -288,6 +304,12 @@ export function ExportPanel() {
       if (flt.grayscale > 0) eqParts.push(`hue=s=0`);
       if (eqParts.length > 0) vfParts.push(`eq=${eqParts.join(":")}`);
       if (flt.blur > 0) vfParts.push(`boxblur=${flt.blur}:1`);
+
+      // cinematic effects (glow, bottom_fade, top_fade, vignette, grain)
+      const cine = useClipper.getState().cinematicEffects;
+      const cineFilter = buildEffectFilter(cine, videoWidth, videoHeight);
+      if (cineFilter) vfParts.push(cineFilter);
+
       if (aspect !== "16:9") {
         // center-crop to the target aspect ratio using ffmpeg expressions.
         // a = source aspect (iw/ih). TGT = target aspect (aw/ah).

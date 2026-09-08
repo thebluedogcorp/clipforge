@@ -85,14 +85,31 @@ export function VideoPreview() {
   const toggleLoop = useClipper((s) => s.toggleLoop);
   const filters = useClipper((s) => s.filters);
   const watermark = useClipper((s) => s.watermark);
+  const colorGrade = useClipper((s) => s.colorGrade);
+  const cinematicEffects = useClipper((s) => s.cinematicEffects);
 
-  // build a CSS filter string for the preview
+  // build a CSS filter string for the preview — includes manual filters +
+  // the selected color grade's CSS equivalent
+  const gradeCss = (() => {
+    switch (colorGrade) {
+      case "warm": return "saturate(1.1) sepia(0.15)";
+      case "cool": return "saturate(1.05) hue-rotate(180deg) brightness(0.95)";
+      case "teal_orange": return "saturate(1.2) contrast(1.05) hue-rotate(-10deg)";
+      case "vintage": return "sepia(0.4) contrast(1.1) brightness(0.95)";
+      case "vibrant": return "saturate(1.35) contrast(1.08) brightness(1.01)";
+      case "bw": return "grayscale(1) contrast(1.1)";
+      default: return "";
+    }
+  })();
+
   const filterCss = [
     `brightness(${filters.brightness})`,
     `contrast(${filters.contrast})`,
     `saturate(${filters.saturation})`,
     `grayscale(${filters.grayscale})`,
     filters.blur > 0 ? `blur(${filters.blur}px)` : "",
+    gradeCss,
+    cinematicEffects.vignette ? `drop-shadow(0 0 ${cinematicEffects.vignetteStrength * 0.5}px rgba(0,0,0,0.6))` : "",
   ].filter(Boolean).join(" ");
 
   const videoRef = useRef<HTMLVideoElement>(null);

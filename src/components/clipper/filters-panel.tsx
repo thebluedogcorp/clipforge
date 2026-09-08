@@ -1,11 +1,13 @@
 "use client";
 
-import { Wand2, Sun, Contrast, Droplet, Grid3x3, Circle, RotateCcw } from "lucide-react";
+import { Wand2, Sun, Contrast, Droplet, Grid3x3, Circle, RotateCcw, Sparkles } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { useClipper } from "@/lib/store";
+import { COLOR_GRADES, CINEMATIC_EFFECTS } from "@/lib/cinematic-effects";
 
 const PRESETS: { name: string; filters: { brightness: number; contrast: number; saturation: number; grayscale: number; blur: number } }[] = [
   { name: "Normal", filters: { brightness: 1, contrast: 1, saturation: 1, grayscale: 0, blur: 0 } },
@@ -22,6 +24,10 @@ export function FiltersPanel() {
   const filters = useClipper((s) => s.filters);
   const setFilters = useClipper((s) => s.setFilters);
   const resetFilters = useClipper((s) => s.resetFilters);
+  const colorGrade = useClipper((s) => s.colorGrade);
+  const setColorGrade = useClipper((s) => s.setColorGrade);
+  const cinematicEffects = useClipper((s) => s.cinematicEffects);
+  const setCinematicEffects = useClipper((s) => s.setCinematicEffects);
 
   const isDefault =
     filters.brightness === 1 &&
@@ -136,10 +142,71 @@ export function FiltersPanel() {
         />
       </div>
 
+      <Separator />
+
+      {/* Color Grades */}
+      <div className="space-y-1.5">
+        <Label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <Wand2 className="h-3.5 w-3.5" />
+          Color grade
+        </Label>
+        <div className="grid grid-cols-4 gap-1">
+          {COLOR_GRADES.map((grade) => (
+            <button
+              key={grade.id}
+              onClick={() => setColorGrade(grade.id)}
+              className={`rounded-lg border px-2 py-1.5 text-[10px] font-medium transition-all ${
+                colorGrade === grade.id
+                  ? "border-primary/50 bg-primary/10 text-primary"
+                  : "border-border/50 bg-card/40 text-muted-foreground hover:border-border hover:text-foreground"
+              }`}
+            >
+              {grade.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* Cinematic Effects */}
+      <div className="space-y-2">
+        <Label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <Sparkles className="h-3.5 w-3.5" />
+          Cinematic effects
+        </Label>
+        <div className="space-y-1.5">
+          {CINEMATIC_EFFECTS.map((effect) => {
+            const enabled = (cinematicEffects as any)[effect.id.replace(/_./g, (m: string) => m[1].toUpperCase())] ||
+              (effect.id === "glow" && cinematicEffects.glow) ||
+              (effect.id === "bottom_fade" && cinematicEffects.bottomFade) ||
+              (effect.id === "top_fade" && cinematicEffects.topFade) ||
+              (effect.id === "vignette" && cinematicEffects.vignette) ||
+              (effect.id === "grain" && cinematicEffects.grain);
+            return (
+              <div key={effect.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-card/40 p-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-medium">{effect.label}</p>
+                  <p className="text-[9px] text-muted-foreground">{effect.description}</p>
+                </div>
+                <Switch
+                  checked={enabled}
+                  onCheckedChange={(v) => {
+                    const key = effect.id === "bottom_fade" ? "bottomFade" :
+                      effect.id === "top_fade" ? "topFade" : effect.id;
+                    setCinematicEffects({ [key]: v } as any);
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="rounded-lg border border-border/50 bg-card/40 p-3">
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Filters apply live to the preview and are burned into exported video.
-          Use presets for quick looks, or fine-tune each slider individually.
+          Filters, color grades, and cinematic effects all apply live to the
+          preview and are burned into exported video.
         </p>
       </div>
     </div>
