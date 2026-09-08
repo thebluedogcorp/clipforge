@@ -59,15 +59,19 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist/clipforge
-          # Copy the compiled launcher binary
-          # (built in the next step, but prepare the folder structure)
-          # Copy standalone server
-          cp -r .next/standalone/* dist/clipforge/
-          # Copy static assets (public folder + fonts)
-          cp -r public dist/clipforge/
-          # Copy .next/static (required by standalone)
+          # Copy the entire standalone server (includes server.js, node_modules, .next partial)
+          cp -r .next/standalone/. dist/clipforge/
+          # Copy .next/static into the standalone's .next folder (required for assets)
           mkdir -p dist/clipforge/.next
           cp -r .next/static dist/clipforge/.next/
+          # Copy the BUILD_ID so the server knows the build
+          cp .next/BUILD_ID dist/clipforge/.next/ 2>/dev/null || true
+          # Copy public folder (fonts, etc.)
+          cp -r public dist/clipforge/
+          echo "=== Distribution contents ==="
+          ls -la dist/clipforge/
+          echo "=== .next contents ==="
+          ls -la dist/clipforge/.next/ 2>/dev/null || echo "no .next folder"
 
       - name: Compile launcher binary
         run: bun build --compile --target=${{ matrix.target }} launcher.ts --outfile dist/clipforge/clipforge${{ matrix.ext }}
