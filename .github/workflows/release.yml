@@ -1,0 +1,176 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: bun-windows-x64
+            artifact: clipforge-windows-x64
+            ext: .exe
+            archive: zip
+          - os: macos-latest
+            target: bun-darwin-x64
+            artifact: clipforge-macos-x64
+            ext: ""
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            artifact: clipforge-linux-x64
+            ext: ""
+            archive: tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Next.js standalone
+        run: bun run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Prepare distribution folder
+        shell: bash
+        run: |
+          mkdir -p dist/clipforge
+          # Copy the compiled launcher binary
+          # (built in the next step, but prepare the folder structure)
+          # Copy standalone server
+          cp -r .next/standalone/* dist/clipforge/
+          # Copy static assets (public folder + fonts)
+          cp -r public dist/clipforge/
+          # Copy .next/static (required by standalone)
+          mkdir -p dist/clipforge/.next
+          cp -r .next/static dist/clipforge/.next/
+
+      - name: Compile launcher binary
+        run: bun build --compile --target=${{ matrix.target }} launcher.ts --outfile dist/clipforge/clipforge${{ matrix.ext }}
+
+      - name: List distribution contents
+        shell: bash
+        run: find dist/clipforge -type f | head -30
+
+      - name: Archive (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd dist
+          7z a -tzip ../${{ matrix.artifact }}.zip clipforge
+          cd ..
+
+      - name: Archive (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd dist
+          tar -czf ../${{ matrix.artifact }}.tar.gz clipforge
+          cd ..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.zip
+            ${{ matrix.artifact }}.tar.gz
+          if-no-files-found: ignore
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: false
+
+      - name: List artifacts
+        run: find artifacts -type f | head -20
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ClipForge ${{ github.ref_name }}
+          body: |
+            # ClipForge ${{ github.ref_name }}
+
+            ## 🎬 AI Video Clipper & Caption Studio
+
+            ClipForge is a local-first, browser-based AI video clipping studio.
+            Create multiple clips from any video, transcribe with AI, generate
+            captions, and export in multiple formats — all running entirely on
+            your machine.
+
+            ## 📥 Download
+
+            Pick the archive for your platform, extract it, and run the
+            `clipforge` executable. Your browser will open automatically at
+            `http://localhost:3000`.
+
+            | Platform | File |
+            |----------|------|
+            | **Windows** | `clipforge-windows-x64.zip` |
+            | **macOS** | `clipforge-macos-x64.tar.gz` |
+            | **Linux** | `clipforge-linux-x64.tar.gz` |
+
+            ## ✨ Features
+
+            - **Multi-source**: Local file upload or YouTube URL
+            - **AI Transcription**: Speech-to-text via ASR
+            - **AI Captions**: LLM-generated timed captions (4 styles)
+            - **Full Timeline**: Drag, resize, auto-split clips
+            - **3D Mockups**: iPhone, Android, iPad, Desktop, TV, Story
+            - **Multi-format Export**: MP4, WebM, GIF, MP3, SRT
+            - **Video Filters**: 8 presets + brightness/contrast/saturation/blur
+            - **Background Music**: Mix audio with volume control + preview
+            - **Watermark/Logo**: Image overlay with position/size/opacity
+            - **Stitch + Crossfade**: Compile clips with 17 transition types
+            - **Caption Burn-in**: Embed styled captions directly into video
+            - **Keyboard Shortcuts**: Full pro-style control (J/K/L, I/O, etc.)
+            - **Project Persistence**: Auto-save to IndexedDB
+
+            ## 🔒 Privacy
+
+            All processing happens in your browser. Your video files never
+            leave your machine. The only network calls are to the AI
+            transcription/caption API.
+
+            ---
+            **Note**: This is a binary distribution. Source code is private.
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
