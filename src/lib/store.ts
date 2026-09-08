@@ -78,6 +78,17 @@ interface ClipperState {
   captionPosition: number; // 0..100, % from top
   setCaptionPosition: (n: number) => void;
 
+  // video filters (applied to preview + export)
+  filters: {
+    brightness: number; // 0.5..2, 1 = normal
+    contrast: number; // 0..2, 1 = normal
+    saturation: number; // 0..3, 1 = normal
+    grayscale: number; // 0..1, 0 = color
+    blur: number; // 0..10 px
+  };
+  setFilters: (f: Partial<{ brightness: number; contrast: number; saturation: number; grayscale: number; blur: number }>) => void;
+  resetFilters: () => void;
+
   // audio waveform (real, decoded via WebAudio)
   waveform: { peaks: number[]; duration: number } | null;
   setWaveform: (w: { peaks: number[]; duration: number } | null) => void;
@@ -118,8 +129,8 @@ interface ClipperState {
   setMusicMuted: (v: boolean) => void;
 
   // ui
-  activePanel: "clips" | "transcript" | "captions" | "export";
-  setActivePanel: (p: "clips" | "transcript" | "captions" | "export") => void;
+  activePanel: "clips" | "transcript" | "captions" | "export" | "filters";
+  setActivePanel: (p: "clips" | "transcript" | "captions" | "export" | "filters") => void;
   busy: { label: string; progress: number } | null;
   setBusy: (b: { label: string; progress: number } | null) => void;
   shortcutsOpen: boolean;
@@ -315,6 +326,10 @@ export const useClipper = create<ClipperState>((set, get) => ({
   setCaptionSize: (n) => set({ captionSize: n }),
   captionPosition: 78,
   setCaptionPosition: (n) => set({ captionPosition: n }),
+
+  filters: { brightness: 1, contrast: 1, saturation: 1, grayscale: 0, blur: 0 },
+  setFilters: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),
+  resetFilters: () => set({ filters: { brightness: 1, contrast: 1, saturation: 1, grayscale: 0, blur: 0 } }),
 
   waveform: null,
   setWaveform: (w) => set({ waveform: w }),

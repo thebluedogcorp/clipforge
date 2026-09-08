@@ -773,3 +773,85 @@ music in single-clip export, music preview, and more transition types.
 3. **Actual `.exe` build script** — `bun build --compile` launcher.
 4. **Music ducking** — auto-lower music volume when clip audio is present.
 5. **Transition preview** — a tiny live preview of each transition type.
+
+---
+
+## Phase 9 Update — Cron Review #8 (Music Preview Fix + Video Filters + Adjust Tab)
+
+### Current Project Status Assessment
+
+The app from Phase 8 is stable — `GET /` → 200, no console errors. QA via
+agent-browser found one bug: the music preview play button's icon didn't
+toggle to Pause despite audio playing (the `play().then()` promise wasn't
+updating state reliably). This round fixed that bug and added a full video
+filters system.
+
+### This Round's Completed Modifications
+
+**1. Fixed music preview icon toggle** (`export-panel.tsx`)
+- Root cause: the `play().then(() => setPlaying(true))` promise callback
+  wasn't firing reliably (autoplay policy / promise resolution edge case).
+- Fix: added an `onPlay={() => setPlaying(true)}` event handler to the
+  `<audio>` element. The browser's `play` event fires directly when
+  playback actually starts — more reliable than the promise.
+- Also removed the redundant `setPlaying(false)` from the `toggle()`
+  function's pause branch (the `onPause` handler now handles it).
+- Verified: clicking play → icon toggles to Pause, aria-label becomes
+  "Pause preview", 1 audio playing.
+
+**2. Video filters system** (`store.ts` + `filters-panel.tsx` + `video-preview.tsx` + `export-panel.tsx`)
+- Added `filters` state to the store: `brightness` (0.3–2), `contrast`
+  (0–2), `saturation` (0–3), `grayscale` (0–1), `blur` (0–10px). Plus
+  `setFilters()` (partial update) and `resetFilters()`.
+- **Preview**: the video element gets a CSS `filter` property built from
+  the filter values (`brightness() contrast() saturate() grayscale() blur()`),
+  with a smooth `transition-[filter] duration-200` for live adjustments.
+- **Export**: the single-clip export builds an ffmpeg `-vf` chain with
+  `eq=brightness=X:contrast=Y:saturation=Z` (note: ffmpeg's `eq` brightness
+  is -1..1 offset, so we subtract 1), `hue=s=0` for grayscale, and
+  `boxblur=N:1` for blur. The stitch export applies the same filters
+  per-segment during extraction.
+- **Filters panel** (`filters-panel.tsx`): a new right-panel tab "Adjust"
+  with:
+  - 8 one-click presets: Normal, Vivid, Warm, Cool, B&W, Vintage, Dream, Sharp.
+  - 5 labeled sliders with icons (Sun/Contrast/Droplet/Circle/Grid3x3) and
+    live % readouts.
+  - A Reset button (shown only when filters are non-default).
+  - A help card explaining filters apply live + are burned into export.
+- Verified: clicking "Vivid" → preview shows boosted saturation/contrast
+  (VLM confirmed "highly vibrant… intensely saturated and luminous");
+  export with Vivid + music → 3.3 MB MP4, ffmpeg log confirms amix.
+
+**3. Right panel expanded to 5 tabs** (`right-panel.tsx` + `store.ts` + `use-keyboard-shortcuts.ts`)
+- Added "Adjust" (Wand2 icon) as the 4th tab, pushing Export to 5th.
+- Keyboard shortcut `5` now switches to the Adjust panel.
+- Updated the `activePanel` type to include `"filters"`.
+
+### Verification Results (this round)
+
+- Lint clean (`bun run lint` → no errors/warnings).
+- `GET /` → 200, no console errors after reload.
+- **Music preview fix**: icon toggles to Pause, aria-label = "Pause preview",
+  1 audio playing.
+- **Vivid preset**: VLM confirmed "highly vibrant… intensely saturated and
+  luminous" in the preview.
+- **Export with filters + music**: 3.3 MB MP4, ffmpeg log confirms amix.
+
+### Unresolved Issues / Risks
+
+- **Filter export accuracy** — the CSS preview uses `brightness(X)` while
+  ffmpeg's `eq` filter uses `brightness=X-1` (offset). The mapping is
+  implemented but not pixel-perfectly verified against the preview.
+- **Mobile timeline** — still deferred.
+- All Phase 1–8 known limitations still apply.
+
+### Priority Recommendations for Next Phase
+
+1. **Music ducking** — auto-lower music volume when clip audio is present
+   (sidechain compression).
+2. **Watermark/logo overlay** — add a logo image overlay for export.
+3. **Mobile timeline bottom-sheet** — collapse the timeline into a swipeable
+   bottom sheet.
+4. **Actual `.exe` build script** — `bun build --compile` launcher.
+5. **Filter export accuracy** — verify the CSS-to-ffmpeg filter mapping
+   produces visually identical results.

@@ -83,6 +83,16 @@ export function VideoPreview() {
   const setLoopRegion = useClipper((s) => s.setLoopRegion);
   const loopEnabled = useClipper((s) => s.loopEnabled);
   const toggleLoop = useClipper((s) => s.toggleLoop);
+  const filters = useClipper((s) => s.filters);
+
+  // build a CSS filter string for the preview
+  const filterCss = [
+    `brightness(${filters.brightness})`,
+    `contrast(${filters.contrast})`,
+    `saturate(${filters.saturation})`,
+    `grayscale(${filters.grayscale})`,
+    filters.blur > 0 ? `blur(${filters.blur}px)` : "",
+  ].filter(Boolean).join(" ");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -259,8 +269,8 @@ export function VideoPreview() {
                 <video
                   ref={videoRef}
                   src={source.url}
-                  className="h-full w-full object-cover"
-                  style={{ objectPosition: "center" }}
+                  className="h-full w-full object-cover transition-[filter] duration-200"
+                  style={{ objectPosition: "center", filter: filterCss || "none" }}
                   playsInline
                   crossOrigin="anonymous"
                 />

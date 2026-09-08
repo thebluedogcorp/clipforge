@@ -259,8 +259,17 @@ export function ExportPanel() {
         }
       }
 
-      // build the video filter chain: crop to aspect + optional caption burn-in
+      // build the video filter chain: crop to aspect + video filters + caption burn-in
       const vfParts: string[] = [];
+      // video color filters (brightness/contrast/saturation/grayscale/blur)
+      const flt = useClipper.getState().filters;
+      const eqParts: string[] = [];
+      if (flt.brightness !== 1) eqParts.push(`brightness=${flt.brightness - 1}`);
+      if (flt.contrast !== 1) eqParts.push(`contrast=${flt.contrast}`);
+      if (flt.saturation !== 1) eqParts.push(`saturation=${flt.saturation}`);
+      if (flt.grayscale > 0) eqParts.push(`hue=s=0`);
+      if (eqParts.length > 0) vfParts.push(`eq=${eqParts.join(":")}`);
+      if (flt.blur > 0) vfParts.push(`boxblur=${flt.blur}:1`);
       if (aspect !== "16:9") {
         // center-crop to the target aspect ratio using ffmpeg expressions.
         // a = source aspect (iw/ih). TGT = target aspect (aw/ah).
@@ -375,6 +384,16 @@ export function ExportPanel() {
     const capColor = useClipper.getState().captionColor;
     const capSize = useClipper.getState().captionSize;
     const capPos = useClipper.getState().captionPosition;
+    const flt = useClipper.getState().filters;
+
+    // build the filter string for video color adjustments (used per-segment)
+    const eqParts: string[] = [];
+    if (flt.brightness !== 1) eqParts.push(`brightness=${flt.brightness - 1}`);
+    if (flt.contrast !== 1) eqParts.push(`contrast=${flt.contrast}`);
+    if (flt.saturation !== 1) eqParts.push(`saturation=${flt.saturation}`);
+    if (flt.grayscale > 0) eqParts.push(`hue=s=0`);
+    const filterEq = eqParts.length > 0 ? `eq=${eqParts.join(":")}` : "";
+    const filterBlur = flt.blur > 0 ? `boxblur=${flt.blur}:1` : "";
 
     const job: ExportJob = {
       id: uid(),
@@ -419,14 +438,16 @@ export function ExportPanel() {
           "-c:a", "aac",
           "-b:a", "128k",
         ];
-        // aspect crop
+        // build the vf chain: filters + aspect crop + caption burn-in
+        const segVf: string[] = [];
+        if (filterEq) segVf.push(filterEq);
+        if (filterBlur) segVf.push(filterBlur);
         if (aspectVal !== "16:9") {
           const targets: Record<string, number> = {
             "9:16": 9 / 16, "1:1": 1, "4:5": 4 / 5,
           };
           const tgt = targets[aspectVal];
-          segArgs.push("-vf", `crop='if(gt(a\\,${tgt})\\,ih*${tgt}\\,iw)':'if(gt(a\\,${tgt})\\,ih\\,iw/${tgt})'`);
-          segArgs.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "23");
+          segVf.push(`crop='if(gt(a\\,${tgt})\\,ih*${tgt}\\,iw)':'if(gt(a\\,${tgt})\\,ih\\,iw/${tgt})'`);
         }
         // burn captions for this segment
         if (burn && caps.length > 0) {
@@ -439,14 +460,11 @@ export function ExportPanel() {
             const hex = capColor.replace("#", "");
             const assColor = `&H00${hex.slice(4, 6)}${hex.slice(2, 4)}${hex.slice(0, 2)}`.toUpperCase();
             const marginV = Math.round(((100 - capPos) / 100) * 720 * 0.85);
-            const burnFilter = `subtitles=${srtName}:fontsdir=/tmp/fonts:force_style='FontName=DejaVu Sans,FontSize=${capSize},PrimaryColour=${assColor},OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,MarginV=${marginV},Alignment=2'`;
-            const existingVf = segArgs.indexOf("-vf");
-            if (existingVf >= 0) {
-              segArgs[existingVf + 1] = segArgs[existingVf + 1] + "," + burnFilter;
-            } else {
-              segArgs.push("-vf", burnFilter);
-            }
+            segVf.push(`subtitles=${srtName}:fontsdir=/tmp/fonts:force_style='FontName=DejaVu Sans,FontSize=${capSize},PrimaryColour=${assColor},OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,MarginV=${marginV},Alignment=2'`);
           }
+        }
+        if (segVf.length > 0) {
+          segArgs.push("-vf", segVf.join(","));
         }
         segArgs.push(segName);
         await ffmpeg.exec(segArgs);
@@ -936,10 +954,9 @@ function MusicPreview({ src, volume }: { src: string | null; volume: number }) {
     if (!a) return;
     if (playing) {
       a.pause();
-      setPlaying(false);
     } else {
       a.volume = volume;
-      a.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+      a.play().catch(() => {});
     }
   }
 
@@ -975,8 +992,9 @@ function MusicPreview({ src, volume }: { src: string | null; volume: number }) {
         src={src || undefined}
         loop
         preload="auto"
-        onEnded={() => setPlaying(false)}
+        onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
       />
     </div>
   );

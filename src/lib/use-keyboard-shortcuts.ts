@@ -160,6 +160,10 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           s.setActivePanel("export");
           break;
+        case "5":
+          e.preventDefault();
+          s.setActivePanel("filters");
+          break;
         case "n":
         case "N":
           e.preventDefault();
